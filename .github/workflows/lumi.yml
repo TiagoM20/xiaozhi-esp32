@@ -1,5 +1,4 @@
-
-name: LUMI 2.5.1 - Ola Lumi
+name: LUMI 2.5.1 - Ola Lumi - Escuta apos fala
 
 on:
   workflow_dispatch:
@@ -27,11 +26,10 @@ jobs:
 
           path = Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
           config = json.loads(path.read_text(encoding="utf-8"))
-
           options = config["builds"][0]["sdkconfig_append"]
-
           overrides = {
               "CONFIG_USE_DEVICE_AEC": "n",
+              "CONFIG_USE_SERVER_AEC": "n",
               "CONFIG_WAKE_WORD_DISABLED": "n",
               "CONFIG_USE_ESP_WAKE_WORD": "n",
               "CONFIG_USE_AFE_WAKE_WORD": "n",
@@ -43,30 +41,101 @@ jobs:
               "CONFIG_SR_MN_CN_NONE": "y",
               "CONFIG_SR_MN_EN_MULTINET6_QUANT": "y",
           }
-
           options = [
               item for item in options
               if item.split("=", 1)[0] not in overrides
           ]
-
-          options.extend(
-              f"{key}={value}"
-              for key, value in overrides.items()
-          )
-
+          options.extend(f"{key}={value}" for key, value in overrides.items())
           config["builds"][0]["sdkconfig_append"] = options
-
           path.write_text(
               json.dumps(config, indent=2, ensure_ascii=False) + "\n",
               encoding="utf-8"
           )
           PY
 
+      - name: Esperar que a voz termine antes de escutar
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          p = Path("main/application.cc")
+          source = p.read_text(encoding="utf-8")
+
+          marker = '#define TAG "Application"'
+          assert source.count(marker) == 1, "TAG nao encontrado"
+          source = source.replace(marker, marker + '''
+
+          // LUMI: do not activate the conversation mic until audio has drained.
+          static bool lumi_waiting_for_speech_end = false;
+          static int64_t lumi_playback_idle_since_us = 0;''', 1)
+
+          start_marker = 'if (strcmp(state->valuestring, "start") == 0) {'
+          stop_marker = '} else if (strcmp(state->valuestring, "stop") == 0) {'
+          sentence_marker = '} else if (strcmp(state->valuestring, "sentence_start") == 0) {'
+          assert all(source.count(m) == 1 for m in (start_marker, stop_marker, sentence_marker)), "Estrutura TTS mudou"
+          a = source.index(start_marker)
+          b = source.index(stop_marker, a)
+          c = source.index(sentence_marker, b)
+
+          # Reset timer on every new TTS start
+          start_part = source[a:b]
+          pattern = r'(?m)^(\s*)SetDeviceState\(kDeviceStateSpeaking\);$'
+          assert len(re.findall(pattern, start_part)) == 1, "TTS start mudou"
+          start_part = re.sub(
+              pattern,
+              lambda m: m.group(1) + 'lumi_waiting_for_speech_end = false;\n'
+                        + m.group(1) + 'lumi_playback_idle_since_us = 0;\n'
+                        + m.group(1) + 'SetDeviceState(kDeviceStateSpeaking);',
+              start_part,
+              count=1,
+          )
+
+          # Keep speaking state after server TTS STOP until actual audio has ended.
+          stop_part = source[b:c]
+          pattern = r'(?m)^(\s*)SetDeviceState\(kDeviceStateListening\);$'
+          assert len(re.findall(pattern, stop_part)) == 1, "TTS stop mudou"
+          stop_part = re.sub(
+              pattern,
+              lambda m: m.group(1) + 'lumi_waiting_for_speech_end = true;\n'
+                        + m.group(1) + 'lumi_playback_idle_since_us = 0;',
+              stop_part,
+              count=1,
+          )
+          source = source[:a] + start_part + stop_part + source[c:]
+
+          # A 1 Hz clock event checks for physical playback completion.
+          # A 750 ms acoustic cooldown prevents self-triggering immediately after speech.
+          tick = '            clock_ticks_++;'
+          assert source.count(tick) == 1, "Clock tick mudou"
+          source = source.replace(tick, tick + '''
+              if (lumi_waiting_for_speech_end) {
+                  if (GetDeviceState() != kDeviceStateSpeaking) {
+                      lumi_waiting_for_speech_end = false;
+                      lumi_playback_idle_since_us = 0;
+                  } else if (!audio_service_.IsPlaybackIdle()) {
+                      lumi_playback_idle_since_us = 0;
+                  } else {
+                      int64_t now = esp_timer_get_time();
+                      if (lumi_playback_idle_since_us == 0) {
+                          lumi_playback_idle_since_us = now;
+                      } else if (now - lumi_playback_idle_since_us >= 750000) {
+                          lumi_waiting_for_speech_end = false;
+                          lumi_playback_idle_since_us = 0;
+                          SetDeviceState(kDeviceStateListening);
+                      }
+                  }
+              }''', 1)
+
+          p.write_text(source, encoding="utf-8")
+          print("LUMI: espera pelo fim do som antes de voltar a escutar.")
+          PY
+
       - name: Compilar firmware LUMI
         shell: bash
         run: |
           source "$IDF_PATH/export.sh"
-
           python3 scripts/build.py \
             waveshare/esp32-s3-touch-lcd-1.54 \
             --name esp32-s3-touch-lcd-1.54 \
@@ -78,14 +147,15 @@ jobs:
           grep -qx 'CONFIG_USE_CUSTOM_WAKE_WORD=y' sdkconfig
           grep -qx 'CONFIG_SR_MN_EN_MULTINET6_QUANT=y' sdkconfig
           grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          grep -qx '# CONFIG_USE_DEVICE_AEC is not set' sdkconfig
+          grep -qx '# CONFIG_USE_SERVER_AEC is not set' sdkconfig
           test -s build/xiaozhi.bin
-
-          echo "Firmware LUMI compilado corretamente."
+          echo "Firmware LUMI com escuta apos fala compilado."
 
       - name: Guardar firmware
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-2.5.1-Ola-Lumi
+          name: LUMI-2.5.1-Ola-Lumi-Escuta-Apos-Fala
           path: |
             build/xiaozhi.bin
             sdkconfig

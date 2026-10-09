@@ -9,7 +9,7 @@ on:
       - 'main/application.cc'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -115,3 +115,30 @@ jobs:
             build/xiaozhi.bin
             sdkconfig
           retention-days: 7
+
+      - name: Preparar ZIP de firmware para instalador automatico
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          fw = Path('build/xiaozhi.bin')
+          assert fw.is_file() and fw.stat().st_size > 1000000
+          assert Path('sdkconfig').is_file()
+          with ZipFile('LUMI-firmware.zip', 'w', ZIP_DEFLATED, compresslevel=6) as z:
+              z.write(fw, 'build/xiaozhi.bin')
+              z.write('sdkconfig', 'sdkconfig')
+          print('LUMI-firmware.zip criado e verificado')
+          PY
+
+      - name: Publicar Release LUMI
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.5.1-build-${{ github.run_number }}
+          name: LUMI 2.5.1 - Build #${{ github.run_number }}
+          make_latest: true
+          body: |
+            Compilacao automatica de LUMI para Waveshare ESP32-S3-Touch-LCD-1.54.
+            ESP32-S3 app image em build/xiaozhi.bin, para flash APENAS no endereco 0x20000.
+            Nao gravar assets.bin nem apagar a memoria completa.
+          files: LUMI-firmware.zip

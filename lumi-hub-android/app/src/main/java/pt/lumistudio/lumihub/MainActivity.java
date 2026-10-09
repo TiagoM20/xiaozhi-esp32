@@ -125,7 +125,8 @@ public final class MainActivity extends Activity {
         setContentView(scroll);
         header();
         navigation();
-        if ("Memórias".equals(tab)) showMemories();
+        if ("LUMI".equals(tab)) showLumi();
+        else if ("Memórias".equals(tab)) showMemories();
         else if ("Ligações".equals(tab)) showConnections();
         else if ("Bateria".equals(tab)) showBattery();
         else showDashboard();
@@ -144,7 +145,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("LUMI  /  HUB", 13, Color.rgb(229, 227, 255), true);
         box.addView(brand);
         margin(text("A tua central inteligente", 26, Color.WHITE, true), box, 10);
-        margin(text("Blackview Tab 15  •  versão 0.2  •  local e privado",
+        margin(text("Blackview Tab 15  •  versão 0.3  •  local e privado",
             13, Color.rgb(234, 238, 255), false), box, 9);
         margin(box, content, 2);
     }
@@ -152,7 +153,7 @@ public final class MainActivity extends Activity {
     private void navigation() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] options = {"Painel", "Memórias", "Ligações", "Bateria"};
+        String[] options = {"Painel", "LUMI", "Memórias", "Ligações", "Bateria"};
         for (String option : options) {
             TextView t = text(option, 12, tab.equals(option) ? Color.WHITE : INK, true);
             t.setGravity(Gravity.CENTER);
@@ -298,13 +299,91 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+    private void showLumi() {
+        LinearLayout status = card();
+        status.addView(text("A MINHA LUMI", 23, INK, true));
+        margin(text("Waveshare ESP32-S3 • Olá Lumi", 13, MUTE, false), status, 8);
+        margin(text("Estado: NÃO VERIFICADO", 18, PURPLE, true), status, 14);
+        margin(text("O tablet ainda não recebe sinais de presença do ESP32. Não mostramos ON/OFF inventado.",
+            13, MUTE, false), status, 7);
+        margin(button("Ver informações de ligação", PURPLE, false, () -> {
+            tab = "Ligações"; render();
+        }), status, 11);
+        margin(status, content, 20);
+
+        LinearLayout faces = card();
+        faces.addView(text("EXPRESSÕES DA LUMI", 18, INK, true));
+        margin(text("Escolhe uma expressão para pré-visualizar. Os comandos remotos serão ativados só quando houver ligação autenticada ao firmware.",
+            13, MUTE, false), faces, 8);
+        String[] moods = {"Feliz", "Apaixonada", "Sonolenta", "Surpresa", "Confiante", "Triste"};
+        String[] symbols = {"☺", "♥", "☾", "!", "★", "◡"};
+        android.widget.GridLayout grid = new android.widget.GridLayout(this);
+        grid.setColumnCount(3);
+        for (int i = 0; i < moods.length; i++) {
+            final String mood = moods[i];
+            LinearLayout choice = stack();
+            choice.setGravity(Gravity.CENTER);
+            choice.setPadding(dp(7), dp(11), dp(7), dp(11));
+            choice.setBackground(outlined(Color.rgb(246, 243, 255), 15, Color.rgb(220, 211, 250)));
+            TextView symbol = text(symbols[i], 24, PURPLE, true);
+            symbol.setGravity(Gravity.CENTER);
+            choice.addView(symbol);
+            TextView name = text(mood, 12, INK, true);
+            name.setGravity(Gravity.CENTER);
+            choice.addView(name);
+            choice.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Expressão: " + mood)
+                .setMessage("Pré-visualização selecionada. Esta versão ainda não envia ordens para os GIFs do dispositivo.")
+                .setPositiveButton("OK", null).show());
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = 0;
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            lp.columnSpec = android.widget.GridLayout.spec(i % 3, 1f);
+            lp.setMargins(dp(2), dp(4), dp(2), dp(4));
+            grid.addView(choice, lp);
+        }
+        margin(grid, faces, 12);
+        margin(faces, content, 13);
+
+        LinearLayout tools = card();
+        tools.addView(text("COMANDOS RÁPIDOS", 18, INK, true));
+        margin(text("Sons, caras, animações e reinício remoto estarão disponíveis depois de implementarmos um canal seguro para o ESP32.",
+            13, MUTE, false), tools, 9);
+        margin(button("Consultar diagnóstico e logs", Color.rgb(232, 227, 250), true,
+            this::showLogs), tools, 13);
+        margin(tools, content, 13);
+    }
+
+    private void showLogs() {
+        SharedPreferences p = getSharedPreferences("hub", MODE_PRIVATE);
+        StringBuilder result = new StringBuilder();
+        result.append("LUMI Hub • Registo local de diagnóstico\n");
+        result.append("Serviço: ").append(serviceActive() ? "iniciado" : "parado").append("\n");
+        result.append("Bateria: ").append(batteryPercentage()).append("%\n");
+        result.append("Última leitura: ");
+        long last = p.getLong("last_update", 0);
+        result.append(last > 0
+            ? new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", new Locale("pt", "PT")).format(new Date(last))
+            : "sem registo");
+        result.append("\n");
+        result.append("Temperatura: ").append(p.getInt("temperature_tenths", 0) / 10.0).append(" °C\n");
+        result.append("IP LG guardado: ").append(p.getString("tv_ip", "").isEmpty() ? "não" : "sim").append("\n");
+        result.append("Ligação real à LUMI: ainda não configurada\n");
+        result.append("Registos de áudio/serial do ESP32: indisponíveis nesta versão\n");
+        new AlertDialog.Builder(this)
+            .setTitle("Logs do LUMI Hub")
+            .setMessage(result.toString())
+            .setPositiveButton("Fechar", null)
+            .show();
+    }
+
     private void showConnections() {
         LinearLayout c = card();
         c.addView(text("LIGAÇÕES DA LUMI", 21, INK, true));
         margin(text("Os conectores ainda não foram ativados. Esta versão não " +
             "envia informações para fora do tablet.", 13, MUTE, false), c, 10);
         margin(c, content, 20);
-        connection("LUMI ESP32-S3", "A aguardar ligação MCP/XiaoZhi");
+        connection("LUMI ESP32-S3", "Ainda sem canal de estado/comandos; configurar na aba LUMI");
         connection("Televisão LG webOS", "Diagnóstico de rede e endereço disponíveis");
         tvDiagnosticCard();
         connection("Memória local", "Ativa • SQLite no Tab 15");

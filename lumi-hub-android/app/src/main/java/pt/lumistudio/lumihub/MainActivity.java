@@ -27,6 +27,13 @@ import java.util.List;
 import java.util.Locale;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.URL;
+import java.net.HttpURLConnection;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import android.app.DownloadManager;
+import android.net.Uri;
+import android.os.Environment;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
@@ -127,7 +134,8 @@ public final class MainActivity extends Activity {
         setContentView(scroll);
         header();
         navigation();
-        if ("LUMI".equals(tab)) showLumi();
+        if ("Updates".equals(tab)) showUpdates();
+        else if ("LUMI".equals(tab)) showLumi();
         else if ("Dispositivos".equals(tab)) showDevices();
         else if ("Memórias".equals(tab)) showMemories();
         else if ("Ligações".equals(tab)) showConnections();
@@ -148,7 +156,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("LUMI  /  HUB", 13, Color.rgb(229, 227, 255), true);
         box.addView(brand);
         margin(text("A tua central inteligente", 26, Color.WHITE, true), box, 10);
-        margin(text("Blackview Tab 15  •  versão 0.4  •  local e privado",
+        margin(text("Blackview Tab 15  •  versão 0.5  •  local e privado",
             13, Color.rgb(234, 238, 255), false), box, 9);
         margin(box, content, 2);
     }
@@ -156,7 +164,7 @@ public final class MainActivity extends Activity {
     private void navigation() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] options = {"Painel", "LUMI", "Memórias", "Dispositivos", "Bateria"};
+        String[] options = {"Painel", "LUMI", "Memórias", "Dispositivos", "Bateria", "Updates"};
         for (String option : options) {
             TextView t = text(option, 12, tab.equals(option) ? Color.WHITE : INK, true);
             t.setGravity(Gravity.CENTER);
@@ -448,6 +456,122 @@ public final class MainActivity extends Activity {
                     });
                 }
             });
+    }
+
+    private void showUpdates() {
+        LinearLayout c = card();
+        c.addView(text("ATUALIZAÇÕES", 22, INK, true));
+        margin(text("Versão instalada: " + getPackageVersion(), 14, PURPLE, true), c, 10);
+        margin(text("Consulta as versões oficiais publicadas no GitHub e descarrega o APK. O Android pedirá confirmação antes de instalar.",
+            13, MUTE, false), c, 8);
+        margin(button("Procurar versões disponíveis", PURPLE, false, this::fetchHubReleases), c, 12);
+        margin(c, content, 20);
+        LinearLayout history = stack();
+        history.setId(17331);
+        margin(history, content, 6);
+        LinearLayout info = card();
+        info.addView(text("COMO FUNCIONAM AS ATUALIZAÇÕES", 14, INK, true));
+        margin(text("O APK será guardado em Transferências. Toca na notificação da transferência para abri-lo e confirmar a instalação. Só são apresentadas versões Android identificadas como lumi-hub-v*. Nenhum firmware ESP32 é instalado por esta opção.",
+            12, MUTE, false), info, 9);
+        margin(info, content, 12);
+    }
+
+    private String getPackageVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) { return "desconhecida"; }
+    }
+
+    private void fetchHubReleases() {
+        LinearLayout container = findViewById(17331);
+        if (container == null) return;
+        container.removeAllViews();
+        margin(text("A consultar GitHub...", 14, MUTE, false), container, 6);
+        new Thread(() -> {
+            JSONArray releases = null;
+            String error = null;
+            try {
+                URL url = new URL("https://api.github.com/repos/TiagoM20/xiaozhi-esp32/releases?per_page=30");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestProperty("Accept", "application/vnd.github+json");
+                connection.setRequestProperty("User-Agent", "LUMI-Hub-Android");
+                connection.setConnectTimeout(7000);
+                connection.setReadTimeout(10000);
+                try {
+                    if (connection.getResponseCode() != 200)
+                        throw new Exception("GitHub HTTP " + connection.getResponseCode());
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) sb.append(line);
+                    }
+                    releases = new JSONArray(sb.toString());
+                } finally { connection.disconnect(); }
+            } catch (Exception e) { error = e.getMessage(); }
+            final JSONArray result = releases;
+            final String err = error;
+            runOnUiThread(() -> {
+                if (!"Updates".equals(tab)) return;
+                LinearLayout holder = findViewById(17331);
+                if (holder == null) return;
+                holder.removeAllViews();
+                if (err != null) {
+                    margin(text("Não foi possível consultar o GitHub: " + err, 14, MUTE, false), holder, 9);
+                    return;
+                }
+                int shown = 0;
+                for (int i = 0; i < result.length(); i++) {
+                    JSONObject release = result.optJSONObject(i);
+                    if (release == null || release.optBoolean("draft")) continue;
+                    String tag = release.optString("tag_name", "");
+                    if (!tag.startsWith("lumi-hub-v")) continue;
+                    JSONArray assets = release.optJSONArray("assets");
+                    String apkUrl = null;
+                    if (assets != null) for (int k = 0; k < assets.length(); k++) {
+                        JSONObject asset = assets.optJSONObject(k);
+                        if (asset != null && asset.optString("name", "").endsWith(".apk")) {
+                            apkUrl = asset.optString("browser_download_url");
+                            break;
+                        }
+                    }
+                    LinearLayout card = card();
+                    card.addView(text(release.optString("name", tag), 17, INK, true));
+                    margin(text("Tag: " + tag + "\n" + release.optString("body", "Sem notas de versão."),
+                        12, MUTE, false), card, 7);
+                    if (apkUrl != null) {
+                        String link = apkUrl;
+                        margin(button("Descarregar APK", PURPLE, false, () -> downloadHubApk(link, tag)), card, 10);
+                    } else {
+                        margin(text("APK ainda não publicado para esta versão.", 12, MUTE, false), card, 7);
+                    }
+                    margin(card, holder, 10);
+                    shown++;
+                }
+                if (shown == 0) margin(text("Ainda não existem versões Android publicadas. A primeira Release será publicada após a configuração da assinatura.", 14, MUTE, false), holder, 10);
+            });
+        }).start();
+    }
+
+    private void downloadHubApk(String url, String tag) {
+        if (!url.startsWith("https://github.com/TiagoM20/xiaozhi-esp32/releases/download/")) {
+            Toast.makeText(this, "Endereço de download não autorizado", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+            request.setTitle("LUMI Hub " + tag);
+            request.setDescription("APK oficial do LUMI Hub");
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "LUMI-Hub-" + tag + ".apk");
+            DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            dm.enqueue(request);
+            new AlertDialog.Builder(this).setTitle("Download iniciado")
+                .setMessage("O APK está a ser descarregado para Transferências. Quando terminar, abre a notificação e confirma a instalação. Não desinstales a versão anterior.")
+                .setPositiveButton("OK", null).show();
+        } catch (Exception e) {
+            new AlertDialog.Builder(this).setTitle("Falha ao descarregar")
+                .setMessage(e.getMessage()).setPositiveButton("OK", null).show();
+        }
     }
 
     private void showConnections() {

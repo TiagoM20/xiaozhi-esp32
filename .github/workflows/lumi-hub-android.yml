@@ -1,4 +1,4 @@
-name: LUMI Hub Android - APK
+name: LUMI Hub Android - APK assinado
 
 on:
   workflow_dispatch:

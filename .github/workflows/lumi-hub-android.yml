@@ -25,11 +25,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Usar Android SDK do runner
+      - name: Localizar Android SDK do runner
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME}"
-          command -v sdkmanager
-          sdkmanager --version
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDK_MANAGER"
+          echo "$(dirname "$SDK_MANAGER")" >> "$GITHUB_PATH"
+          "$SDK_MANAGER" --version
 
       - name: Preparar Android SDK 35
         run: |

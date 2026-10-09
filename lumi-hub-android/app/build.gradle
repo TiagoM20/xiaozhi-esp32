@@ -5,6 +5,10 @@ plugins {
 android {
     namespace 'pt.lumistudio.lumihub'
     compileSdk 35
+    // Sideload para Android 12; alvo 32 preserva o comportamento do serviço atual.
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+    }
 
     defaultConfig {
         applicationId 'pt.lumistudio.lumihub'

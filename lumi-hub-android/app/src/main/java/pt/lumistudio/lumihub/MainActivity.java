@@ -156,7 +156,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("LUMI  /  HUB", 13, Color.rgb(229, 227, 255), true);
         box.addView(brand);
         margin(text("A tua central inteligente", 26, Color.WHITE, true), box, 10);
-        margin(text("Blackview Tab 15  •  versão 0.5  •  local e privado",
+        margin(text("Blackview Tab 15  •  versão 0.5.1  •  local e privado",
             13, Color.rgb(234, 238, 255), false), box, 9);
         margin(box, content, 2);
     }
@@ -411,6 +411,20 @@ public final class MainActivity extends Activity {
         margin(text("A TV deve estar ligada para o primeiro emparelhamento. Aceita o pedido no ecrã.",
             13, MUTE, false), card, 8);
         margin(button("Emparelhar TV", PURPLE, false, () -> tvSend(null, true)), card, 9);
+        margin(button("Confirmar novamente certificado", Color.rgb(237, 233, 251), true,
+            () -> new AlertDialog.Builder(this)
+                .setTitle("Voltar a confirmar certificado?")
+                .setMessage("Elimina apenas a impressão digital da TV guardada no tablet. "
+                    + "A próxima ligação apresenta um novo certificado para confirmares.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar", (d, w) -> {
+                    getSharedPreferences("hub", MODE_PRIVATE).edit()
+                        .remove("lg_cert_pin").apply();
+                    tvSend(null, true);
+                }).show()), card, 8);
+        String tvLast = getSharedPreferences("hub", MODE_PRIVATE)
+            .getString("lg_last_status", "Ainda não testado");
+        margin(text("Último diagnóstico: " + tvLast, 12, MUTE, false), card, 8);
         String[][] actions = {
             {"Aumentar volume", "ssap://audio/volumeUp"},
             {"Baixar volume", "ssap://audio/volumeDown"},
@@ -442,20 +456,56 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("OK", null).show();
             return;
         }
-        Toast.makeText(this, pair ? "A emparelhar com LG..." : "A enviar comando...", Toast.LENGTH_SHORT).show();
-        WebOsController.request(ip, prefs.getString("lg_client_key", ""), action,
-            pair, new WebOsController.Listener() {
-                @Override public void onMessage(String msg, String key) {
-                    runOnUiThread(() -> {
-                        if (key != null && !key.isEmpty())
-                            prefs.edit().putString("lg_client_key", key).apply();
+        String pinned = prefs.getString("lg_cert_pin", "");
+        if (pinned.isEmpty()) {
+            Toast.makeText(this, "A verificar certificado seguro da LG...", Toast.LENGTH_SHORT).show();
+            WebOsController.inspectCertificate(ip, (fingerprint, error) -> {
+                runOnUiThread(() -> {
+                    if (error != null) {
                         new AlertDialog.Builder(MainActivity.this)
-                            .setTitle("TV LG")
-                            .setMessage(msg)
+                            .setTitle("TV LG — ligação segura")
+                            .setMessage("Não consegui ler o certificado em wss://"
+                                + ip + ":3001.\n\nDetalhe: " + error
+                                + "\n\nConfirma que a TV está ligada e que o IP está correto.")
                             .setPositiveButton("OK", null).show();
-                    });
-                }
+                        return;
+                    }
+                    String shown = fingerprint.replaceAll("(.{8})(?!$)", "$1 ");
+                    new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Confiar nesta televisão LG?")
+                        .setMessage("A TV apresentou um certificado TLS com esta impressão digital SHA-256:\n\n"
+                            + shown + "\n\n"
+                            + "Confirma apenas se o IP indicado pertence à tua TV LG, "
+                            + "na tua rede de casa. A chave ficará associada a este certificado.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Confiar e emparelhar", (d,w) -> {
+                            prefs.edit().putString("lg_cert_pin", fingerprint).apply();
+                            tvSendDirect(ip, action, pair);
+                        }).show();
+                });
             });
+            return;
+        }
+        tvSendDirect(ip, action, pair);
+    }
+
+    private void tvSendDirect(String ip, String action, boolean pair) {
+        SharedPreferences prefs = getSharedPreferences("hub", MODE_PRIVATE);
+        Toast.makeText(this, pair
+            ? "À espera do pedido no ecrã da LG..." : "A ligar à LG por WSS 3001...",
+            Toast.LENGTH_LONG).show();
+        WebOsController.request(ip,
+            prefs.getString("lg_client_key", ""),
+            prefs.getString("lg_cert_pin", ""),
+            action, pair, (message, key) -> runOnUiThread(() -> {
+                if (key != null && !key.isEmpty())
+                    prefs.edit().putString("lg_client_key", key).apply();
+                prefs.edit().putString("lg_last_status", message).apply();
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("TV LG — ligação segura")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null).show();
+            }));
     }
 
     private void showUpdates() {
@@ -612,7 +662,12 @@ public final class MainActivity extends Activity {
                     return;
                 }
             }
-            p.edit().putString("tv_ip", host).apply();
+            String previousIp = p.getString("tv_ip", "");
+            SharedPreferences.Editor tvEdit = p.edit().putString("tv_ip", host);
+            if (!host.equals(previousIp)) {
+                tvEdit.remove("lg_cert_pin").remove("lg_client_key");
+            }
+            tvEdit.apply();
             Toast.makeText(this, "A verificar ligação à TV...", Toast.LENGTH_SHORT).show();
             new Thread(() -> {
                 boolean found = false;

@@ -28,3 +28,17 @@ android {
 dependencies {
     implementation 'org.java-websocket:Java-WebSocket:1.5.7'
 }
+
+def releaseStore = System.getenv("LUMI_RELEASE_KEYSTORE")
+def releasePass = System.getenv("LUMI_RELEASE_PASSWORD")
+if (releaseStore && releasePass) {
+    android.signingConfigs {
+        lumiRelease {
+            storeFile file(releaseStore)
+            storePassword releasePass
+            keyAlias 'lumihub'
+            keyPassword releasePass
+        }
+    }
+    android.buildTypes.release.signingConfig android.signingConfigs.lumiRelease
+}

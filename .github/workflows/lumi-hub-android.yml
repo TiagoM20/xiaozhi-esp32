@@ -9,7 +9,7 @@ on:
       - '.github/workflows/lumi-hub-android.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android:
@@ -57,3 +57,44 @@ jobs:
           name: LUMI-Hub-Android-Tab15-v0.1
           path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: Preparar assinatura permanente (se configurada)
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "LUMI_HAS_SIGNING=false" >> "$GITHUB_ENV"
+            echo "Assinatura de publicacao ainda nao configurada; so APK de teste sera gerado."
+          else
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+            test -s "$RUNNER_TEMP/lumi-release.jks"
+            echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+            echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "LUMI_HAS_SIGNING=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Compilar APK assinado para atualizacoes
+        if: env.LUMI_HAS_SIGNING == 'true'
+        run: gradle -p lumi-hub-android :app:assembleRelease --no-daemon
+
+      - name: Verificar e preparar APK publicado
+        if: env.LUMI_HAS_SIGNING == 'true'
+        run: |
+          test -s lumi-hub-android/app/build/outputs/apk/release/app-release.apk
+          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-Hub-v0.5.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs LUMI-Hub-v0.5.0.apk
+
+      - name: Publicar versao Android no GitHub Releases
+        if: env.LUMI_HAS_SIGNING == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hub-v0.5.0
+          name: LUMI Hub 0.5.0 - Atualizacoes
+          make_latest: false
+          body: |
+            Aplicacao Android LUMI Hub, versao 0.5.0.
+            Inclui secao Updates, historico de versoes e download integrado.
+            APK assinado com a chave persistente LUMI Studio.
+            A atualizacao de versoes de teste com outra chave pode exigir migracao.
+          files: LUMI-Hub-v0.5.0.apk

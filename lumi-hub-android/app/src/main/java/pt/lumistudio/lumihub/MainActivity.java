@@ -25,6 +25,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
 public final class MainActivity extends Activity {
     private static final int INK = Color.rgb(36, 31, 68);
@@ -142,7 +144,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("LUMI  /  HUB", 13, Color.rgb(229, 227, 255), true);
         box.addView(brand);
         margin(text("A tua central inteligente", 26, Color.WHITE, true), box, 10);
-        margin(text("Blackview Tab 15  •  versão 0.1  •  local e privado",
+        margin(text("Blackview Tab 15  •  versão 0.2  •  local e privado",
             13, Color.rgb(234, 238, 255), false), box, 9);
         margin(box, content, 2);
     }
@@ -303,9 +305,59 @@ public final class MainActivity extends Activity {
             "envia informações para fora do tablet.", 13, MUTE, false), c, 10);
         margin(c, content, 20);
         connection("LUMI ESP32-S3", "A aguardar ligação MCP/XiaoZhi");
-        connection("Televisão LG webOS", "Emparelhamento ainda não realizado");
+        connection("Televisão LG webOS", "Diagnóstico de rede e endereço disponíveis");
+        tvDiagnosticCard();
         connection("Memória local", "Ativa • SQLite no Tab 15");
         connection("Tomada inteligente", "Não configurada (opcional)");
+    }
+
+    private void tvDiagnosticCard() {
+        LinearLayout c = card();
+        c.addView(text("LIGAÇÃO À TV LG", 17, INK, true));
+        margin(text("Diagnóstico local. Não faz emparelhamento nem envia comandos à TV.",
+            13, MUTE, false), c, 7);
+        SharedPreferences p = getSharedPreferences("hub", MODE_PRIVATE);
+        EditText ip = new EditText(this);
+        ip.setSingleLine(true);
+        ip.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        ip.setHint("IP da TV na rede (ex.: 192.168.1.100)");
+        ip.setText(p.getString("tv_ip", ""));
+        margin(ip, c, 9);
+        margin(button("Guardar IP e testar ligação", PURPLE, false, () -> {
+            final String host = ip.getText().toString().trim();
+            if (!host.matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
+                Toast.makeText(this, "Indica um endereço IPv4 válido", Toast.LENGTH_LONG).show();
+                return;
+            }
+            String[] octets = host.split("\\.");
+            for (String octet : octets) {
+                if (Integer.parseInt(octet) > 255) {
+                    Toast.makeText(this, "IP inválido", Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+            p.edit().putString("tv_ip", host).apply();
+            Toast.makeText(this, "A verificar ligação à TV...", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                boolean found = false;
+                for (int port : new int[]{3001, 3000}) {
+                    try (Socket socket = new Socket()) {
+                        socket.connect(new InetSocketAddress(host, port), 1800);
+                        found = true;
+                        break;
+                    } catch (Exception ignored) {}
+                }
+                final boolean reachable = found;
+                runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setTitle(reachable ? "Serviço webOS encontrado" : "Sem resposta da TV")
+                    .setMessage(reachable
+                        ? "A TV aceita ligações de rede. O emparelhamento e os comandos serão adicionados posteriormente."
+                        : "Não foi possível abrir as portas webOS 3000/3001. Verifica o IP, se a TV está ligada e se ambos estão na mesma rede.")
+                    .setPositiveButton("OK", null)
+                    .show());
+            }).start();
+        }), c, 10);
+        margin(c, content, 12);
     }
 
     private void connection(String name, String state) {

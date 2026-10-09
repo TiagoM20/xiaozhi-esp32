@@ -25,8 +25,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Usar Android SDK do runner
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          command -v sdkmanager
+          sdkmanager --version
 
       - name: Preparar Android SDK 35
         run: |

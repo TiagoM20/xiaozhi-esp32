@@ -2,6 +2,11 @@ name: LUMI 2.5.1 - Ola Lumi - Sem interrupcoes
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lumi.yml'
+      - 'main/application.cc'
 
 permissions:
   contents: read

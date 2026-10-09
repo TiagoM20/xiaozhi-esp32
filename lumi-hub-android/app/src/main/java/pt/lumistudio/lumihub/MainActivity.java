@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Locale;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
 public final class MainActivity extends Activity {
     private static final int INK = Color.rgb(36, 31, 68);
@@ -126,6 +128,7 @@ public final class MainActivity extends Activity {
         header();
         navigation();
         if ("LUMI".equals(tab)) showLumi();
+        else if ("Dispositivos".equals(tab)) showDevices();
         else if ("Memórias".equals(tab)) showMemories();
         else if ("Ligações".equals(tab)) showConnections();
         else if ("Bateria".equals(tab)) showBattery();
@@ -145,7 +148,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("LUMI  /  HUB", 13, Color.rgb(229, 227, 255), true);
         box.addView(brand);
         margin(text("A tua central inteligente", 26, Color.WHITE, true), box, 10);
-        margin(text("Blackview Tab 15  •  versão 0.3  •  local e privado",
+        margin(text("Blackview Tab 15  •  versão 0.4  •  local e privado",
             13, Color.rgb(234, 238, 255), false), box, 9);
         margin(box, content, 2);
     }
@@ -153,7 +156,7 @@ public final class MainActivity extends Activity {
     private void navigation() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] options = {"Painel", "LUMI", "Memórias", "Ligações", "Bateria"};
+        String[] options = {"Painel", "LUMI", "Memórias", "Dispositivos", "Bateria"};
         for (String option : options) {
             TextView t = text(option, 12, tab.equals(option) ? Color.WHITE : INK, true);
             t.setGravity(Gravity.CENTER);
@@ -307,7 +310,7 @@ public final class MainActivity extends Activity {
         margin(text("O tablet ainda não recebe sinais de presença do ESP32. Não mostramos ON/OFF inventado.",
             13, MUTE, false), status, 7);
         margin(button("Ver informações de ligação", PURPLE, false, () -> {
-            tab = "Ligações"; render();
+            tab = "Dispositivos"; render();
         }), status, 11);
         margin(status, content, 20);
 
@@ -375,6 +378,76 @@ public final class MainActivity extends Activity {
             .setMessage(result.toString())
             .setPositiveButton("Fechar", null)
             .show();
+    }
+
+    private void showDevices() {
+        LinearLayout c = card();
+        c.addView(text("OS MEUS DISPOSITIVOS", 22, INK, true));
+        margin(text("Equipamentos da casa ligados ou por configurar no Hub.",
+            13, MUTE, false), c, 8);
+        margin(c, content, 20);
+
+        connection("LG webOS • TV da sala", "Emparelhamento e comandos locais");
+        tvDiagnosticCard();
+        tvControlCard();
+        connection("Alfawise • Aspirador", "A aguardar modelo exato para integrar");
+        connection("AC da sala", "A aguardar modelo do comando Wi-Fi / infravermelhos");
+        connection("LUMI ESP32-S3", "A preparar canal de controlo e logs");
+        connection("Memória pessoal", "Base SQLite local ativa");
+        connection("Tomada inteligente", "Ainda não instalada");
+    }
+
+    private void tvControlCard() {
+        LinearLayout card = card();
+        card.addView(text("COMANDO TV LG", 18, INK, true));
+        margin(text("A TV deve estar ligada para o primeiro emparelhamento. Aceita o pedido no ecrã.",
+            13, MUTE, false), card, 8);
+        margin(button("Emparelhar TV", PURPLE, false, () -> tvSend(null, true)), card, 9);
+        String[][] actions = {
+            {"Aumentar volume", "ssap://audio/volumeUp"},
+            {"Baixar volume", "ssap://audio/volumeDown"},
+            {"Silenciar", "ssap://audio/setMute"},
+            {"Abrir YouTube", "ssap://system.launcher/launch"},
+            {"Desligar TV", "ssap://system/turnOff"}
+        };
+        for (String[] act : actions) {
+            margin(button(act[0], Color.rgb(237, 233, 251), true, () -> {
+                if ("ssap://system/turnOff".equals(act[1])) {
+                    new AlertDialog.Builder(this).setTitle("Desligar televisão?")
+                        .setMessage("Enviar comando de desligar à LG?")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Desligar", (d,w) -> tvSend(act[1], false)).show();
+                } else tvSend(act[1], false);
+            }), card, 7);
+        }
+        margin(text("O botão Ligar TV (Wake-on-LAN) será implementado depois de confirmar o MAC e a configuração da TV.",
+            12, MUTE, false), card, 10);
+        margin(card, content, 12);
+    }
+
+    private void tvSend(String action, boolean pair) {
+        SharedPreferences prefs = getSharedPreferences("hub", MODE_PRIVATE);
+        String ip = prefs.getString("tv_ip", "");
+        if (ip.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Primeiro guarda o IP")
+                .setMessage("Em Dispositivos, introduz o IP da LG e testa a ligação.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        Toast.makeText(this, pair ? "A emparelhar com LG..." : "A enviar comando...", Toast.LENGTH_SHORT).show();
+        WebOsController.request(ip, prefs.getString("lg_client_key", ""), action,
+            pair, new WebOsController.Listener() {
+                @Override public void onMessage(String msg, String key) {
+                    runOnUiThread(() -> {
+                        if (key != null && !key.isEmpty())
+                            prefs.edit().putString("lg_client_key", key).apply();
+                        new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("TV LG")
+                            .setMessage(msg)
+                            .setPositiveButton("OK", null).show();
+                    });
+                }
+            });
     }
 
     private void showConnections() {

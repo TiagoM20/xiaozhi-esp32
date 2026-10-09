@@ -257,6 +257,10 @@ void Application::Run() {
 
         if (bits & MAIN_EVENT_VAD_CHANGE) {
             if (GetDeviceState() == kDeviceStateListening) {
+                // Restart the silence timer whenever voice activity changes.
+                // A new 15s window begins when speech ends.
+                listening_silence_since_us_ = audio_service_.IsVoiceDetected()
+                    ? 0 : esp_timer_get_time();
                 auto led = Board::GetInstance().GetLed();
                 led->OnStateChanged();
             }
@@ -273,6 +277,33 @@ void Application::Run() {
 
         if (bits & MAIN_EVENT_CLOCK_TICK) {
             clock_ticks_++;
+
+            // LUMI: after 15 seconds without speech, end the conversation.
+            // Never count while output is pending or microphone processing
+            // has not started yet (e.g., while TTS playback is draining).
+            if (GetDeviceState() == kDeviceStateListening &&
+                listening_mode_ == kListeningModeAutoStop &&
+                !pending_listening_start_ &&
+                audio_service_.IsAudioProcessorRunning() &&
+                audio_service_.IsPlaybackIdle()) {
+                if (audio_service_.IsVoiceDetected()) {
+                    listening_silence_since_us_ = 0;
+                } else {
+                    const int64_t now = esp_timer_get_time();
+                    if (listening_silence_since_us_ == 0) {
+                        listening_silence_since_us_ = now;
+                    } else if (now - listening_silence_since_us_ >= 15000000) {
+                        ESP_LOGI(TAG, "LUMI: 15s silence, closing conversation");
+                        listening_silence_since_us_ = 0;
+                        if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                            protocol_->CloseAudioChannel();
+                        } else {
+                            SetDeviceState(kDeviceStateIdle);
+                        }
+                    }
+                }
+            }
+
             auto display = Board::GetInstance().GetDisplay();
             display->UpdateStatusBar();
 
@@ -984,6 +1015,7 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
 void Application::HandleStateChangedEvent() {
     DeviceState new_state = state_machine_.GetState();
     clock_ticks_ = 0;
+    listening_silence_since_us_ = 0;
     // Any state change invalidates a pending deferred listening start;
     // the Listening case below re-arms it when needed.
     pending_listening_start_ = false;
@@ -1068,6 +1100,7 @@ void Application::StartListeningAudio() {
     // Send the start listening command
     protocol_->SendStartListening(listening_mode_);
     audio_service_.EnableVoiceProcessing(true);
+    listening_silence_since_us_ = esp_timer_get_time();
 
     ConfigureWakeWordForListening();
 

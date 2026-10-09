@@ -78,7 +78,13 @@ jobs:
           b = source.index('void Application::StartNotification(', a)
           assert 'audio_service_.EnableWakeWordDetection(false);' in source[a:b]
           assert 'pending_listening_start_' in source
-          print('LUMI: wake bloqueada durante fala; conversa continua apos reproducao.')
+          assert 'listening_silence_since_us_' in source
+          assert '15000000' in source
+          assert 'LUMI: 15s silence, closing conversation' in source
+          assert '15s silence' in source
+          header = Path('main/application.h').read_text(encoding='utf-8')
+          assert 'int64_t listening_silence_since_us_' in header
+          print('LUMI: wake bloqueada durante fala; silencio limitado a 15 segundos.')
           PY
 
       - name: Compilar firmware LUMI

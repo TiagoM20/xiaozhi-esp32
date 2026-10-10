@@ -1027,6 +1027,8 @@ public final class MainActivity extends Activity {
         add(c,label("COMANDOS POR VOZ · XIAOZHI MCP",12,VIOLET,true),16);
         add(c,label("Estado: "+mcpStatus(),13,MUTED,false),6);
         add(c,button("Configurar ligação de voz",true,this::mcpSettings),10);
+        add(c,button("Testar voz PT-PT offline no Tab 15",false,()->
+            startActivity(new Intent(this,OfflineVoiceLabActivity.class))),9);
         add(c,label("O Hub partilha comandos da TV com o agente XiaoZhi por MCP. É necessário configurar o endereço MCP e manter a central ativa. A comunicação direta com os GIFs do ESP32 ainda está por implementar.",12,MUTED,false),10);
         add(c,button("Consultar diagnósticos e logs do Hub",false,this::diagnostics),14);
         add(c,label("Os logs internos do ESP32 e o controlo remoto dos GIFs só "

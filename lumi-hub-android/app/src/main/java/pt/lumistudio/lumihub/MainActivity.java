@@ -45,22 +45,27 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(12, 18, 31);
-    private static final int PANEL = Color.rgb(24, 32, 48);
-    private static final int PANEL_BRIGHT = Color.rgb(34, 44, 62);
-    private static final int WHITE = Color.rgb(245, 248, 255);
-    private static final int MUTED = Color.rgb(162, 175, 195);
-    private static final int CYAN = Color.rgb(114, 228, 239);
-    private static final int GOLD = Color.rgb(255, 187, 119);
-    private static final int VIOLET = Color.rgb(174, 154, 251);
-    private static final int GREEN = Color.rgb(139, 223, 173);
-    private static final int STROKE = Color.rgb(52, 64, 85);
+    private static int BG = Color.rgb(12, 18, 31);
+    private static int PANEL = Color.rgb(24, 32, 48);
+    private static int PANEL_BRIGHT = Color.rgb(34, 44, 62);
+    private static int WHITE = Color.rgb(245, 248, 255);
+    private static int MUTED = Color.rgb(162, 175, 195);
+    private static int CYAN = Color.rgb(114, 228, 239);
+    private static int GOLD = Color.rgb(255, 187, 119);
+    private static int VIOLET = Color.rgb(174, 154, 251);
+    private static int GREEN = Color.rgb(139, 223, 173);
+    private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
     private final String[] navItems = {"Estação", "Dispositivos", "Memórias", "Atualizações"};
     private String page = "Estação";
     private String activeDevice = "tv";
     private LinearLayout stage;
+    private HubThemes.Palette currentPalette=HubThemes.get(0);
+    private int themeId=0;
+    private String updatesTab="Versões";
+    private static final int CAMERA_REQUEST=405;
+    private static final int ADMIN_REQUEST=406;
     private MemoryDb memories;
     private static final int PICK_MEMORY_JSON = 9441;
     private final android.os.Handler weatherHandler =
@@ -234,7 +239,37 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void applyTheme() {
+        int index=getSharedPreferences("hub",MODE_PRIVATE).getInt("hub_theme",0);
+        themeId=HubThemes.bounded(index);
+        currentPalette=HubThemes.get(themeId);
+        BG=currentPalette.background;
+        PANEL=currentPalette.panel;
+        PANEL_BRIGHT=currentPalette.bright;
+        WHITE=currentPalette.text;
+        MUTED=currentPalette.muted;
+        CYAN=currentPalette.accent;
+        GOLD=currentPalette.gold;
+        VIOLET=currentPalette.violet;
+        GREEN=currentPalette.green;
+        STROKE=currentPalette.stroke;
+        getWindow().setStatusBarColor(currentPalette.nav);
+        getWindow().setNavigationBarColor(BG);
+        if(Build.VERSION.SDK_INT>=26){
+            int flags=themeId==2?
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR:0;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        }
+    }
+    private void setTheme(int selected) {
+        int index=HubThemes.bounded(selected);
+        getSharedPreferences("hub",MODE_PRIVATE).edit().putInt("hub_theme",index).apply();
+        updatesTab="Temas";
+        draw();
+    }
+
     private void draw() {
+        applyTheme();
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
@@ -262,7 +297,7 @@ public final class MainActivity extends Activity {
     private void topNavigation(LinearLayout root) {
         LinearLayout bar=horizontal();
         bar.setPadding(dp(18),dp(7),dp(15),dp(7));
-        bar.setBackgroundColor(Color.rgb(13,27,53));
+        bar.setBackgroundColor(currentPalette.nav);
         TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
         brand.setGravity(Gravity.CENTER_VERTICAL);
         brand.setOnClickListener(v->{page="Estação";draw();});
@@ -274,8 +309,8 @@ public final class MainActivity extends Activity {
                 active?WHITE:MUTED,active);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(12),dp(11),dp(12),dp(11));
-            tab.setBackground(fill(active?Color.rgb(43,81,146):
-                Color.rgb(13,27,53),9));
+            tab.setBackground(fill(active?currentPalette.activeTab:
+                currentPalette.nav,9));
             tab.setOnClickListener(v->{page=target;draw();});
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,dp(44));
@@ -319,7 +354,7 @@ public final class MainActivity extends Activity {
 
     private void bottomNavigation(LinearLayout root) {
         LinearLayout bar = horizontal();
-        bar.setBackgroundColor(Color.rgb(16, 24, 39));
+        bar.setBackgroundColor(currentPalette.nav);
         bar.setPadding(dp(10), dp(9), dp(10), dp(13));
         for (String name : navItems) {
             boolean selected = name.equals(page);
@@ -327,7 +362,7 @@ public final class MainActivity extends Activity {
                 selected ? CYAN : MUTED, selected);
             nav.setGravity(Gravity.CENTER);
             nav.setPadding(dp(4), dp(13), dp(4), dp(13));
-            nav.setBackground(fill(selected ? PANEL_BRIGHT : Color.rgb(16,24,39), 13));
+            nav.setBackground(fill(selected ? PANEL_BRIGHT : currentPalette.nav, 13));
             nav.setOnClickListener(v -> { page = name; draw(); });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 0, dp(50), 1f);
@@ -404,13 +439,12 @@ public final class MainActivity extends Activity {
         LinearLayout hero=vertical();
         GradientDrawable banner=new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(32,53,115),Color.rgb(30,83,142),
-                Color.rgb(24,52,103),Color.rgb(24,31,67)});
+            new int[]{currentPalette.bannerA,currentPalette.bannerB,currentPalette.bannerC});
         banner.setCornerRadius(dp(13));
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("LUMI HOME",13,Color.rgb(198,223,255),true));
+        hero.addView(label("LUMI HOME",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -418,35 +452,39 @@ public final class MainActivity extends Activity {
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("HH:mm");
         time.setTextSize(landscape()?53:49);
-        time.setTextColor(WHITE);
+        time.setTextColor(themeId==2?currentPalette.tileText:WHITE);
         time.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
         clockGroup.addView(time);
-        add(clockGroup,label(date("EEEE, d 'de' MMMM"),13,WHITE,false),1);
+        add(clockGroup,label(date("EEEE, d 'de' MMMM"),13,
+            themeId==2?currentPalette.tileText:WHITE,false),1);
         addWeighted(info,clockGroup,1,0);
 
         RebordosaWeather.State current=RebordosaWeather.read(this);
         LinearLayout climate=vertical();
         climate.setGravity(Gravity.RIGHT);
-        TextView symbol=label(current.icon,landscape()?33:30,WHITE,true);
+        TextView symbol=label(current.icon,landscape()?33:30,
+            themeId==2?currentPalette.tileText:WHITE,true);
         symbol.setGravity(Gravity.RIGHT);
         climate.addView(symbol);
-        TextView degrees=label(current.temperature,26,WHITE,true);
+        TextView degrees=label(current.temperature,26,
+            themeId==2?currentPalette.tileText:WHITE,true);
         degrees.setGravity(Gravity.RIGHT);
         climate.addView(degrees);
-        TextView text=label(current.condition,11,WHITE,false);
+        TextView text=label(current.condition,11,
+            themeId==2?currentPalette.tileText:WHITE,false);
         text.setGravity(Gravity.RIGHT);
         climate.addView(text);
         info.addView(climate);
         add(hero,info,12);
         add(hero,label("HUMIDADE EXTERIOR   " + current.humidity
-            + "     ·     " + current.updated,11,Color.rgb(218,232,248),false),13);
+            + "     ·     " + current.updated,11,
+            themeId==2?currentPalette.tileText:Color.rgb(218,232,248),false),13);
         addOverview(top,hero,0);
 
         LinearLayout noticePanel=vertical();
         noticePanel.setPadding(dp(20),dp(16),dp(18),dp(16));
         noticePanel.setMinimumHeight(dp(187));
-        noticePanel.setBackground(borderFill(Color.rgb(27,41,79),13,
-            Color.rgb(60,80,129)));
+        noticePanel.setBackground(borderFill(currentPalette.statusPanel,13,STROKE));
         noticePanel.addView(label("ESTADO DA CASA",13,WHITE,true));
         add(noticePanel,label("●   LUMI DESK    ·    " + mcpStatus(),
             12,mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),12);
@@ -543,22 +581,21 @@ public final class MainActivity extends Activity {
         tile.setPadding(dp(5),dp(9),dp(5),dp(8));
         GradientDrawable gradient=new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(38,67,120),Color.rgb(32,50,100),
-                Color.rgb(27,37,79)});
+            HubThemes.tileGradient(themeId,index));
         gradient.setCornerRadius(dp(11));
         gradient.setStroke(dp("Dispositivos".equals(page) && item.key.equals(activeDevice)?2:1),
             "Dispositivos".equals(page) && item.key.equals(activeDevice)
-                ?CYAN:Color.rgb(62,90,142));
+                ?CYAN:currentPalette.tileBorder);
         tile.setBackground(gradient);
 
-        HomeIconView icon=new HomeIconView(this,item.icon,WHITE);
+        HomeIconView icon=new HomeIconView(this,item.icon,currentPalette.tileIcon);
         tile.addView(icon,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=label(item.name,landscape()?13:13,WHITE,true);
+        TextView name=label(item.name,13,currentPalette.tileText,true);
         name.setMaxLines(2);
         name.setGravity(Gravity.CENTER);
         add(tile,name,6);
         TextView status=label(deviceDescription(item),11,
-            deviceAccent(item),false);
+            themeId==2?currentPalette.tileText:deviceAccent(item),false);
         status.setMaxLines(2);
         status.setGravity(Gravity.CENTER);
         add(tile,status,3);

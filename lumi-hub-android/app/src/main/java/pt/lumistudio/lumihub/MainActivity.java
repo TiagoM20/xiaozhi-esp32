@@ -238,25 +238,52 @@ public final class MainActivity extends Activity {
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
-        LinearLayout workspace = horizontal();
-        workspace.setGravity(Gravity.TOP);
-        root.addView(workspace, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        if (landscape()) addSidebar(workspace);
+
+        // Modo mural: navbar estreita em cima, a largura total para os tiles.
+        if (landscape()) topNavigation(root);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        workspace.addView(scroll, new LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        scroll.setVerticalScrollBarEnabled(false);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         stage = vertical();
-        stage.setPadding(dp(landscape()?18:16), dp(landscape()?13:16),
-            dp(landscape()?18:16), dp(24));
+        stage.setPadding(dp(landscape()?17:14), dp(landscape()?12:13),
+            dp(landscape()?17:14), dp(20));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Memórias".equals(page)) drawMemories();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
         if (!landscape()) bottomNavigation(root);
+    }
+
+    private void topNavigation(LinearLayout root) {
+        LinearLayout bar=horizontal();
+        bar.setPadding(dp(18),dp(7),dp(15),dp(7));
+        bar.setBackgroundColor(Color.rgb(13,27,53));
+        TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        brand.setOnClickListener(v->{page="Estação";draw();});
+        addWeighted(bar,brand,1,0);
+        for(String name:navItems) {
+            final String target=name;
+            boolean active=name.equals(page);
+            TextView tab=label("Estação".equals(name)?"Home":name,12,
+                active?WHITE:MUTED,active);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(12),dp(11),dp(12),dp(11));
+            tab.setBackground(fill(active?Color.rgb(43,81,146):
+                Color.rgb(13,27,53),9));
+            tab.setOnClickListener(v->{page=target;draw();});
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,dp(44));
+            lp.leftMargin=dp(5);
+            bar.addView(tab,lp);
+        }
+        root.addView(bar, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
 
     private void addSidebar(LinearLayout workspace) {
@@ -365,98 +392,188 @@ public final class MainActivity extends Activity {
             .getString("lg_last_status","Por verificar");
     }
     private void drawStation() {
+        // A meteorologia actualiza o cartao sem alterar a configuracao.
         RebordosaWeather.refreshIfNeeded(this, () -> {
             if (!isFinishing() && "Estação".equals(page)) draw();
         });
-        LinearLayout top = horizontal();
-        LinearLayout headings = vertical();
-        headings.addView(label("LUMI  /  SMART HOME", 12, CYAN, true));
-        add(headings, label("Estação", 28, WHITE, true), 3);
-        add(headings, label(date("EEEE, d 'de' MMMM"), 12, MUTED, false), 4);
-        addWeighted(top, headings, 1, 0);
-        top.addView(label(serviceRunning() ? "●  ONLINE" : "●  PARADA", 12,
-            serviceRunning() ? GREEN : GOLD, true));
-        add(stage, top, 3);
+        add(stage,label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true),1);
 
-        LinearLayout overview = landscape() ? horizontal() : vertical();
-        LinearLayout clock = panel();
-        GradientDrawable clockGradient = new GradientDrawable(
+        // Layout tipo painel mural: hora+meteorologia à esquerda, estado à direita.
+        LinearLayout top = landscape()?horizontal():vertical();
+        top.setGravity(Gravity.TOP);
+        LinearLayout hero=vertical();
+        GradientDrawable banner=new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(42,54,92),Color.rgb(25,36,62),Color.rgb(19,37,58)});
-        clockGradient.setCornerRadius(dp(20));
-        clock.setBackground(clockGradient);
-        clock.addView(label("BEM-VINDOS A CASA",12,CYAN,true));
-        TextClock time = new TextClock(this);
+            new int[]{Color.rgb(32,53,115),Color.rgb(30,83,142),
+                Color.rgb(24,52,103),Color.rgb(24,31,67)});
+        banner.setCornerRadius(dp(13));
+        hero.setBackground(banner);
+        hero.setPadding(dp(22),dp(18),dp(20),dp(16));
+        hero.setMinimumHeight(dp(187));
+        hero.addView(label("LUMI HOME",13,Color.rgb(198,223,255),true));
+
+        LinearLayout info=horizontal();
+        LinearLayout clockGroup=vertical();
+        TextClock time=new TextClock(this);
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("HH:mm");
+        time.setTextSize(landscape()?53:49);
         time.setTextColor(WHITE);
-        time.setTextSize(landscape()?42:46);
         time.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
-        add(clock,time,7);
-        add(clock,label("Rebordosa · Paredes",12,MUTED,false),5);
-        addOverview(overview,clock,0);
+        clockGroup.addView(time);
+        add(clockGroup,label(date("EEEE, d 'de' MMMM"),13,WHITE,false),1);
+        addWeighted(info,clockGroup,1,0);
 
-        LinearLayout weather = panel();
-        RebordosaWeather.State current = RebordosaWeather.read(this);
-        weather.addView(label("METEOROLOGIA  ·  EXTERIOR",12,CYAN,true));
-        LinearLayout weatherRow = horizontal();
-        TextView symbol = label(current.icon,38,GOLD,true);
-        addWeighted(weatherRow,symbol,1,0);
-        weatherRow.addView(label(current.temperature,33,WHITE,true));
-        add(weather,weatherRow,9);
-        add(weather,label(current.condition,14,WHITE,true),7);
-        add(weather,label("Humidade " + current.humidity,13,MUTED,false),4);
-        add(weather,label(current.updated,10,MUTED,false),7);
-        addOverview(overview,weather,10);
+        RebordosaWeather.State current=RebordosaWeather.read(this);
+        LinearLayout climate=vertical();
+        climate.setGravity(Gravity.RIGHT);
+        TextView symbol=label(current.icon,landscape()?33:30,WHITE,true);
+        symbol.setGravity(Gravity.RIGHT);
+        climate.addView(symbol);
+        TextView degrees=label(current.temperature,26,WHITE,true);
+        degrees.setGravity(Gravity.RIGHT);
+        climate.addView(degrees);
+        TextView text=label(current.condition,11,WHITE,false);
+        text.setGravity(Gravity.RIGHT);
+        climate.addView(text);
+        info.addView(climate);
+        add(hero,info,12);
+        add(hero,label("HUMIDADE EXTERIOR   " + current.humidity
+            + "     ·     " + current.updated,11,Color.rgb(218,232,248),false),13);
+        addOverview(top,hero,0);
 
-        LinearLayout status=panel();
-        status.addView(label("ESTADO DA CENTRAL",12,VIOLET,true));
-        add(status,label("TAB 15   " + battery() + "%",21,WHITE,true),14);
-        add(status,label(charging()?"Em carregamento":"A funcionar com bateria",
-            12,MUTED,false),5);
-        add(status,label("XiaoZhi MCP: "+mcpStatus(),12,
-            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),9);
-        add(status,button("Configurar voz",false,this::mcpSettings),10);
-        addOverview(overview,status,10);
-        add(stage,overview,16);
+        LinearLayout noticePanel=vertical();
+        noticePanel.setPadding(dp(20),dp(16),dp(18),dp(16));
+        noticePanel.setMinimumHeight(dp(187));
+        noticePanel.setBackground(borderFill(Color.rgb(27,41,79),13,
+            Color.rgb(60,80,129)));
+        noticePanel.addView(label("ESTADO DA CASA",13,WHITE,true));
+        add(noticePanel,label("●   LUMI DESK    ·    " + mcpStatus(),
+            12,mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),12);
+        add(noticePanel,label("●   TV DA SALA    ·    " +
+            (savedIp().isEmpty()?"Por configurar":"Ligação por verificar"),
+            12,savedIp().isEmpty()?GOLD:CYAN,false),8);
+        add(noticePanel,label("●   TAB 15    ·    " + battery() + "% de bateria",
+            12,GREEN,false),8);
+        LinearLayout shortcuts=horizontal();
+        addWeighted(shortcuts,button("Dispositivos",false,()->{
+            page="Dispositivos";activeDevice="tv";draw();
+        }),1,0);
+        addWeighted(shortcuts,button("Spotify",false,()->{
+            page="Dispositivos";activeDevice="spotify";draw();
+        }),1,7);
+        add(noticePanel,shortcuts,10);
+        addOverview(top,noticePanel,11);
+        add(stage,top,12);
 
-        sectionTitle("A tua casa","Dispositivos, entretenimento e acessos rápidos.");
+        LinearLayout heading=horizontal();
+        LinearLayout words=vertical();
+        words.addView(label("A MINHA CASA",20,WHITE,true));
+        add(words,label("Todos os equipamentos e acessos num só lugar",12,MUTED,false),3);
+        addWeighted(heading,words,1,0);
+        heading.addView(label("11 + espaço extra",11,CYAN,false));
+        add(stage,heading,17);
+
         GridLayout grid=new GridLayout(this);
-        int cols=landscape()?3:2;
+        int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        addTile(grid,0,cols,"TV da Sala",savedIp().isEmpty()?
-            "LG webOS · por configurar":"LG webOS · controlo disponível","▣",CYAN,"tv");
-        addTile(grid,1,cols,"LUMI DESK","Assistente · voz e expressões","◈",VIOLET,"lumi");
-        addTile(grid,2,cols,"Câmara Varanda","IPC-TA22C-G · vídeo por integrar","◉",GREEN,"camera");
-        addTile(grid,3,cols,"Spotify","Abrir música e playlists","♫",GREEN,"spotify");
-        addTile(grid,4,cols,"Telemóvel Leonardo","Localizar através da Google","⌖",GOLD,"phone_leonardo");
-        addTile(grid,5,cols,"Aspirador","Alfawise · por configurar","⌁",MUTED,"vacuum");
-        addTile(grid,6,cols,"AC da Sala","Climatização · por configurar","❄",CYAN,"ac");
-        addTile(grid,7,cols,"Tab 15","Central · bateria " + battery() + "%","▤",VIOLET,"tablet");
-        addTile(grid,8,cols,"Tomada Wi-Fi","Gestão da carga · futuramente","⚡",MUTED,"plug");
-        add(stage,grid,12);
+        for(int i=0;i<HomeDevices.ALL.length;i++) {
+            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        }
+        add(stage,grid,11);
 
-        LinearLayout quick=panel();
-        quick.addView(label("CONTROLOS RÁPIDOS  /  TV DA SALA",12,MUTED,true));
-        LinearLayout commands=horizontal();
-        addWeighted(commands,button("Vol. +",false,
+        LinearLayout controls=panel();
+        controls.addView(label("TV DA SALA  ·  CONTROLOS RÁPIDOS",12,CYAN,true));
+        LinearLayout buttons=horizontal();
+        addWeighted(buttons,button("Vol. +",false,
             ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
-        addWeighted(commands,button("Vol. −",false,
+        addWeighted(buttons,button("Vol. −",false,
             ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
-        addWeighted(commands,button("YouTube",false,
+        addWeighted(buttons,button("YouTube",false,
             ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
-        addWeighted(commands,button("Desligar",true,()->new AlertDialog.Builder(this)
+        addWeighted(buttons,button("Desligar",false,()->new AlertDialog.Builder(this)
             .setTitle("Desligar TV da Sala?")
             .setNegativeButton("Cancelar",null)
             .setPositiveButton("Desligar",(dialog,which)->
                 tvCommand("ssap://system/turnOff",false)).show()),1,7);
-        add(quick,commands,12);
-        add(stage,quick,14);
+        add(controls,buttons,12);
+        add(stage,controls,15);
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {
         if (landscape()) addWeighted(row,tile,1,margin);
         else add(row,tile,margin);
+    }
+
+    private String deviceDescription(HomeDevices.Device d) {
+        switch(d.key) {
+            case "tv": return savedIp().isEmpty() ? "Por configurar" : "Ligação por verificar";
+            case "lumi": return "MCP · " + mcpStatus();
+            case "tablet": return "Bateria " + battery() + "%";
+            case "camera": return "Vídeo por integrar";
+            case "vacuum": return "Por configurar";
+            case "phone_deolinda":
+            case "phone_tiago":
+            case "phone_leonardo": return "Localizar via Google";
+            case "spotify": return "Abrir música";
+            case "ac": return "Por configurar";
+            case "plug": return "Por instalar";
+            case "more": return "Futuros dispositivos";
+            default: return d.subtitle;
+        }
+    }
+
+    private int deviceAccent(HomeDevices.Device d) {
+        switch(d.key) {
+            case "lumi": return VIOLET;
+            case "phone_deolinda":
+            case "phone_tiago":
+            case "phone_leonardo": return GOLD;
+            case "vacuum":
+            case "more": return CYAN;
+            case "spotify": return GREEN;
+            default: return Color.rgb(173,217,255);
+        }
+    }
+
+    private void addHomeTile(GridLayout grid, HomeDevices.Device item,
+                             int index,int columns) {
+        LinearLayout tile=vertical();
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding(dp(5),dp(9),dp(5),dp(8));
+        GradientDrawable gradient=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(38,67,120),Color.rgb(32,50,100),
+                Color.rgb(27,37,79)});
+        gradient.setCornerRadius(dp(11));
+        gradient.setStroke(dp("Dispositivos".equals(page) && item.key.equals(activeDevice)?2:1),
+            "Dispositivos".equals(page) && item.key.equals(activeDevice)
+                ?CYAN:Color.rgb(62,90,142));
+        tile.setBackground(gradient);
+
+        HomeIconView icon=new HomeIconView(this,item.icon,WHITE);
+        tile.addView(icon,new LinearLayout.LayoutParams(dp(47),dp(47)));
+        TextView name=label(item.name,landscape()?13:13,WHITE,true);
+        name.setMaxLines(2);
+        name.setGravity(Gravity.CENTER);
+        add(tile,name,6);
+        TextView status=label(deviceDescription(item),11,
+            deviceAccent(item),false);
+        status.setMaxLines(2);
+        status.setGravity(Gravity.CENTER);
+        add(tile,status,3);
+        tile.setOnClickListener(v->{
+            activeDevice=item.key;
+            page="Dispositivos";
+            draw();
+        });
+        GridLayout.LayoutParams params=new GridLayout.LayoutParams();
+        params.width=0;
+        params.height=dp(landscape()?128:125);
+        params.columnSpec=GridLayout.spec(index%columns,1f);
+        params.rowSpec=GridLayout.spec(index/columns,1f);
+        params.setMargins(dp(4),dp(4),dp(4),dp(4));
+        grid.addView(tile,params);
     }
 
     private String mcpStatus() {
@@ -513,79 +630,21 @@ public final class MainActivity extends Activity {
         draw();
     }
 
-    private void addTile(GridLayout grid,int index,int columns,String name,
-                         String detailText,String symbol,int accent,String device) {
-        LinearLayout tile=vertical();
-        GradientDrawable gradient=new GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(33,45,67),Color.rgb(23,31,47)});
-        gradient.setCornerRadius(dp(18));
-        gradient.setStroke(dp(1),STROKE);
-        tile.setBackground(gradient);
-        tile.setPadding(dp(16),dp(13),dp(13),dp(15));
-        LinearLayout upper=horizontal();
-        TextView icon=label(symbol,27,accent,true);
-        icon.setGravity(Gravity.CENTER);
-        icon.setBackground(fill(Color.rgb(43,55,76),13));
-        icon.setPadding(dp(7),dp(4),dp(7),dp(4));
-        upper.addView(icon, new LinearLayout.LayoutParams(dp(55),dp(47)));
-        TextView arrow=label("↗",18,MUTED,false);
-        arrow.setGravity(Gravity.RIGHT);
-        addWeighted(upper,arrow,1,9);
-        tile.addView(upper);
-        add(tile,label(name,16,WHITE,true),9);
-        add(tile,label(detailText,12,MUTED,false),5);
-        tile.setOnClickListener(v->{
-            activeDevice=device;
-            page="Dispositivos";
-            draw();
-        });
-        GridLayout.LayoutParams p=new GridLayout.LayoutParams();
-        p.width=0;
-        p.height=ViewGroup.LayoutParams.MATCH_PARENT;
-        p.columnSpec=GridLayout.spec(index%columns,1f);
-        p.rowSpec=GridLayout.spec(index/columns,1f);
-        p.setMargins(dp(4),dp(4),dp(4),dp(4));
-        grid.addView(tile,p);
+    private void drawDevices() {
+        heading("Dispositivos","Todos os equipamentos, incluindo os que ainda vais configurar.");
+        drawSelectedDevice();
+
+        sectionTitle("A MINHA CASA","Os mesmos equipamentos que encontras na Home.");
+        GridLayout grid=new GridLayout(this);
+        int cols=landscape()?5:2;
+        grid.setColumnCount(cols);
+        for(int i=0;i<HomeDevices.ALL.length;i++){
+            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        }
+        add(stage,grid,11);
     }
 
-    private void drawDevices() {
-        heading("Dispositivos","A tua casa e os serviços que utilizas, num único painel.");
-        sectionTitle("Casa e LUMI","Seleciona um equipamento para consultar as opções.");
-        GridLayout grid=new GridLayout(this);
-        int col=landscape()?3:2;
-        grid.setColumnCount(col);
-        String[] keys={"tv","lumi","tablet","camera","vacuum","ac","plug",
-            "phone_deolinda","phone_tiago","phone_leonardo","spotify"};
-        String[] names={"TV da Sala","LUMI DESK","Tab 15","Câmara Varanda",
-            "Aspirador","AC da Sala","Tomada Wi-Fi","Telemóvel Deolinda",
-            "Telemóvel Tiago","Telemóvel Leonardo","Spotify"};
-        String[] descriptions={"LG webOS","Assistente ESP32-S3","Central Android",
-            "IPC-TA22C-G","Alfawise","Por configurar","Por instalar",
-            "Find Hub Google","Find Hub Google","Find Hub Google","Música"};
-        String[] symbols={"▣","◈","▤","◉","⌁","❄","⚡","⌖","⌖","⌖","♫"};
-        int[] accents={CYAN,VIOLET,GREEN,GREEN,MUTED,CYAN,MUTED,
-            GOLD,GOLD,GOLD,GREEN};
-        for(int i=0;i<keys.length;i++){
-            final String key=keys[i];
-            LinearLayout tile=vertical();
-            boolean active=key.equals(activeDevice);
-            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,
-                active?accents[i]:STROKE));
-            tile.setPadding(dp(13),dp(13),dp(11),dp(14));
-            tile.addView(label(symbols[i],22,accents[i],true));
-            add(tile,label(names[i],14,WHITE,true),8);
-            add(tile,label(descriptions[i],11,MUTED,false),3);
-            tile.setOnClickListener(v->{activeDevice=key;draw();});
-            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
-            lp.width=0;
-            lp.height=ViewGroup.LayoutParams.MATCH_PARENT;
-            lp.columnSpec=GridLayout.spec(i%col,1f);
-            lp.rowSpec=GridLayout.spec(i/col,1f);
-            lp.setMargins(dp(3),dp(5),dp(3),dp(5));
-            grid.addView(tile,lp);
-        }
-        add(stage,grid,12);
+    private void drawSelectedDevice() {
         if("tv".equals(activeDevice)) tvDetails();
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
@@ -595,11 +654,13 @@ public final class MainActivity extends Activity {
         else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
         else if("spotify".equals(activeDevice)) spotifyDetails();
         else if("vacuum".equals(activeDevice)) placeholderDetails("Aspirador Alfawise",
-            "É necessário confirmar o modelo exato e a interface de controlo. Os comandos não estão ainda ligados.");
+            "Equipamento reservado na LUMI. O controlo fica por configurar quando confirmarmos o modelo exato e o protocolo suportado.");
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
-            "É necessário identificar a marca e o método de controlo (Wi-Fi ou infravermelhos).");
-        else placeholderDetails("Tomada inteligente",
-            "A tomada ainda não foi instalada. A gestão da carga do tablet continua desativada.");
+            "A integração depende da marca e do protocolo Wi-Fi ou infravermelhos. Mantemos o equipamento no painel.");
+        else if("plug".equals(activeDevice)) placeholderDetails("Tomada inteligente",
+            "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
+        else placeholderDetails("Espaço para novos dispositivos",
+            "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
     }
 
     private void phoneDetails(String owner) {

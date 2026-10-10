@@ -265,7 +265,7 @@ public final class MainActivity extends Activity {
             getWindow().getDecorView().setSystemUiVisibility(flags);
         }
     }
-    private void setTheme(int selected) {
+    private void selectHubTheme(int selected) {
         int index=HubThemes.bounded(selected);
         getSharedPreferences("hub",MODE_PRIVATE).edit().putInt("hub_theme",index).apply();
         updatesTab="Temas";
@@ -1179,7 +1179,7 @@ public final class MainActivity extends Activity {
                 12,scheme.muted,false);
             status.setGravity(Gravity.CENTER);
             add(choice,status,7);
-            choice.setOnClickListener(v->setTheme(index));
+            choice.setOnClickListener(v->selectHubTheme(index));
             GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
             lp.width=0;
             lp.height=dp(143);

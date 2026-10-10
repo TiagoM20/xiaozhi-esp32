@@ -57,6 +57,34 @@ O backend próprio precisaria de serviço contínuo, ASR/LLM/TTS, encaminhamento
 - Sem cortes nem regressões sonoras.
 - Reversível, sem apagar NVS, assets ou memórias.
 
-## Próxima dependência
+## Verificacao do painel (10/10/2026)
 
-Captura da lista de vozes configuráveis do agente atual na consola xiaozhi.me (sem tokens, passwords ou chaves API), para decidir se é possível usar a voz pretendida sem trocar servidor.
+O painel atual em `xiaozhi.me` oferece somente «voz masculina» e «voz feminina» para «Portuguese». A voz `pt-PT-RaquelNeural` nao aparece e a consola nao expõe uma opcao para selecionar o fornecedor TTS. **Nao e possivel confirmar ou impor Raquel no backend publico a partir do firmware.**
+
+## Prova de conceito isolada (LUMI Voice Lab)
+
+Pasta: `tools/lumi-voice-lab`.
+
+- `voice_test.py` gera MP3 de demonstracao `pt-PT-RaquelNeural` com EdgeTTS e suporta alternativa **oficial** Azure Speech REST se existir recurso/chave Microsoft Speech.
+- `test_voice.py` testa SSML PT-PT, escapamento XML, validacao elementar MP3 e pedido Azure simulado sem ligar à rede.
+- `.github/workflows/lumi-voice-ptpt.yml` testa Python, sintetiza exemplo de falas com pronuncia PT-PT e gera artefacto de audio; quando passa em main, publica uma demonstracao como release independente de firmware.
+- `config-servidor-ptpt.example.yaml` mostra parametros de um servidor XiaoZhi autoalojado: `EdgeTTS` + `OpenaiASR`. Nao substitui a configuracao do agente publico.
+
+**Importante sobre reconhecimento de voz:** `SenseVoiceSmall` por defeito nao suporta portugues (apenas mandarim/cantones, ingles, japones e coreano). Para um servidor proprio, o ASR deve ser compativel com portugues, como `OpenaiASR` com `gpt-4o-mini-transcribe`; isto pressupoe credenciais separadas, custos e avaliacao de latencia.
+
+**A demo EdgeTTS nao significa que a LUMI DESK ja fala com esta voz.**
+A cadeia completa continua a exigir servidor que controle ASR/LLM/TTS e entregue Opus ao ESP32. O serviço EdgeTTS e nao oficial e pode estar temporariamente indisponivel.
+
+## Caminho de implementacao e seguranca
+
+1. **Escutar o teste** da Raquel Neural e decidir se a pronuncia e o timbre sao adequados.
+2. Escolher infraestrutura 24/7 para backend compativel, evitando PC permanentemente ligado; analisar custo de cloud vs viabilidade de tablet Android (nao comprovada).
+3. Preparar o servidor com ASR em portugues e EdgeTTS, ou adaptador Azure oficial se houver recurso Speech. Credenciais **apenas no servidor privado/secret store**, nunca no repositorio.
+4. Validar em simulador cliente WebSocket, Opus e uso de memoria antes de mudar um ESP32.
+5. Testar endpoint OTA alternativo numa configuracao reversivel. Preservar o endpoint e firmware anteriores, NVS, wake word e assets. Nunca apagar flash completa.
+6. Executar testes fisicos (falar, voltar a escutar, 15 s silencio, pronuncia, latencia/cortes, GIFs), revertendo ao servidor anterior se falhar.
+
+Referencias:
+- https://github.com/xinnan-tech/xiaozhi-esp32-server/blob/main/main/xiaozhi-server/config.yaml
+- https://learn.microsoft.com/pt-pt/azure/ai-services/speech-service/rest-text-to-speech
+- https://learn.microsoft.com/pt-pt/azure/ai-services/speech-service/language-support

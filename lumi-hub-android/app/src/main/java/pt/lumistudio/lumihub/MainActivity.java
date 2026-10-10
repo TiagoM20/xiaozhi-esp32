@@ -3,6 +3,10 @@ package pt.lumistudio.lumihub;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -431,7 +435,11 @@ public final class MainActivity extends Activity {
         RebordosaWeather.refreshIfNeeded(this, () -> {
             if (!isFinishing() && "Estação".equals(page)) draw();
         });
-        add(stage,label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true),1);
+        LinearLayout topControls=horizontal();
+        TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
+        addWeighted(topControls,homeLabel,1,0);
+        topControls.addView(button("Apagar ecrã",false,this::screenOff));
+        add(stage,topControls,1);
 
         // Layout tipo painel mural: hora+meteorologia à esquerda, estado à direita.
         LinearLayout top = landscape()?horizontal():vertical();
@@ -549,6 +557,7 @@ public final class MainActivity extends Activity {
             case "lumi": return "MCP · " + mcpStatus();
             case "tablet": return "Bateria " + battery() + "%";
             case "camera": return "Vídeo por integrar";
+            case "camera_sala": return "Imagem local · ao tocar";
             case "vacuum": return "Por configurar";
             case "phone_deolinda":
             case "phone_tiago":
@@ -686,6 +695,7 @@ public final class MainActivity extends Activity {
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
         else if("camera".equals(activeDevice)) cameraDetails();
+        else if("camera_sala".equals(activeDevice)) cameraRoomDetails();
         else if("phone_deolinda".equals(activeDevice)) phoneDetails("Deolinda");
         else if("phone_tiago".equals(activeDevice)) phoneDetails("Tiago");
         else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
@@ -698,6 +708,67 @@ public final class MainActivity extends Activity {
             "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
         else placeholderDetails("Espaço para novos dispositivos",
             "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
+    }
+
+    private void cameraRoomDetails() {
+        LinearLayout card=detail();
+        card.addView(label("Câmara da Sala",23,WHITE,true));
+        add(card,label("TAB 15 · CÂMARA LOCAL",13,CYAN,true),7);
+        add(card,label("A imagem aparece apenas quando abres a pré-visualização. Não existe gravação, transmissão em rede nem acesso remoto à câmara.",13,MUTED,false),9);
+        add(card,button("Ver câmara do tablet",true,this::openRoomCamera),13);
+        add(card,label("O Android poderá pedir autorização para utilizar a câmara. Esta autorização é diferente da Câmara da Varanda.",12,MUTED,false),10);
+        add(stage,card,16);
+    }
+
+    private void openRoomCamera() {
+        if(Build.VERSION.SDK_INT>=23 &&
+           checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{Manifest.permission.CAMERA},CAMERA_REQUEST);
+            return;
+        }
+        try {
+            startActivity(new Intent(this,CameraRoomActivity.class));
+        }catch(Exception error){
+            notice("Câmara Sala","Não foi possível abrir a pré-visualização: "+error.getMessage());
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,
+                                                       int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode!=CAMERA_REQUEST) return;
+        if(grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED)
+            openRoomCamera();
+        else
+            notice("Câmara Sala","O acesso à câmara não foi autorizado. Podes permitir nas definições do Android.");
+    }
+
+    private void screenOff() {
+        ComponentName admin=new ComponentName(this,ScreenLockAdmin.class);
+        DevicePolicyManager manager=(DevicePolicyManager)getSystemService(DEVICE_POLICY_SERVICE);
+        if(manager==null){
+            notice("Ecrã do tablet","Esta versão do Android não disponibiliza gestão de ecrã.");
+            return;
+        }
+        if(!manager.isAdminActive(admin)){
+            new AlertDialog.Builder(this)
+                .setTitle("Ativar botão Apagar ecrã")
+                .setMessage("Para apagar realmente o ecrã, o Android exige autorização de Administrador do dispositivo. O Hub pede apenas permissão para bloquear o ecrã, sem aceder a palavras-passe nem apagar dados. Poderá ser necessário o PIN ao voltar a ligar. A autorização pode ser revogada nas definições do Android. Queres abrir a autorização?")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Configurar",(dialog,which)->{
+                    Intent request=new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                    request.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,admin);
+                    request.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "Permitir ao LUMI Hub apagar o ecrã do Tab 15 quando pressionares o botão.");
+                    startActivityForResult(request,ADMIN_REQUEST);
+                }).show();
+            return;
+        }
+        try {
+            manager.lockNow();
+        } catch(SecurityException error) {
+            notice("Apagar ecrã","O Android não permitiu bloquear o ecrã. Verifica a autorização de administrador.");
+        }
     }
 
     private void phoneDetails(String owner) {
@@ -986,6 +1057,7 @@ public final class MainActivity extends Activity {
         add(c,button(serviceRunning()?"Parar central":"Iniciar central",
             true,this::switchService),10);
         add(c,button("Ver logs e diagnóstico",false,this::diagnostics),8);
+        add(c,button("Apagar ecrã do Tab 15",false,this::screenOff),8);
         add(c,label("Gestão futura da bateria: ligar a 40%, desligar a 80%. "
             +"Sem tomada inteligente, a aplicação apenas monitoriza.",13,MUTED,false),14);
         add(stage,c,16);

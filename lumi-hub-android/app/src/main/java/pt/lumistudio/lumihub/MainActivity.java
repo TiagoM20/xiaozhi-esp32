@@ -63,6 +63,18 @@ public final class MainActivity extends Activity {
     private LinearLayout stage;
     private MemoryDb memories;
     private static final int PICK_MEMORY_JSON = 9441;
+    private final android.os.Handler weatherHandler =
+        new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable weatherTick = new Runnable() {
+        @Override public void run() {
+            if ("Estação".equals(page)) {
+                RebordosaWeather.refreshIfNeeded(MainActivity.this, () -> {
+                    if (!isFinishing() && "Estação".equals(page)) draw();
+                });
+            }
+            weatherHandler.postDelayed(this, 5L * 60L * 1000L);
+        }
+    };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -76,6 +88,12 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (stage != null) draw();
+        weatherHandler.removeCallbacks(weatherTick);
+        weatherHandler.postDelayed(weatherTick, 5L * 60L * 1000L);
+    }
+    @Override protected void onPause() {
+        weatherHandler.removeCallbacks(weatherTick);
+        super.onPause();
     }
     @Override protected void onDestroy() {
         if (memories != null) memories.close();
@@ -347,63 +365,83 @@ public final class MainActivity extends Activity {
             .getString("lg_last_status","Por verificar");
     }
     private void drawStation() {
+        RebordosaWeather.refreshIfNeeded(this, () -> {
+            if (!isFinishing() && "Estação".equals(page)) draw();
+        });
         LinearLayout top = horizontal();
         LinearLayout headings = vertical();
-        headings.addView(label("LUMI  /  CASA INTELIGENTE",12,CYAN,true));
-        add(headings,label("Estação",27,WHITE,true),4);
-        add(headings,label(date("EEEE, d 'de' MMMM"),12,MUTED,false),4);
-        addWeighted(top,headings,1,0);
-        top.addView(label(serviceRunning()?"●  HUB ATIVO":"●  HUB PARADO",12,
-            serviceRunning()?GREEN:GOLD,true));
-        add(stage,top,3);
+        headings.addView(label("LUMI  /  SMART HOME", 12, CYAN, true));
+        add(headings, label("Estação", 28, WHITE, true), 3);
+        add(headings, label(date("EEEE, d 'de' MMMM"), 12, MUTED, false), 4);
+        addWeighted(top, headings, 1, 0);
+        top.addView(label(serviceRunning() ? "●  ONLINE" : "●  PARADA", 12,
+            serviceRunning() ? GREEN : GOLD, true));
+        add(stage, top, 3);
 
-        LinearLayout overview = horizontal();
-        LinearLayout clockPanel = panel();
-        GradientDrawable gradient = new GradientDrawable(
+        LinearLayout overview = landscape() ? horizontal() : vertical();
+        LinearLayout clock = panel();
+        GradientDrawable clockGradient = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(35,47,82),Color.rgb(24,36,61),Color.rgb(23,39,58)});
-        gradient.setCornerRadius(dp(20));
-        clockPanel.setBackground(gradient);
-        clockPanel.addView(label("AGORA EM CASA",12,CYAN,true));
-        TextClock clock = new TextClock(this);
-        clock.setFormat24Hour("HH:mm");
-        clock.setFormat12Hour("HH:mm");
-        clock.setTextSize(landscape()?47:39);
-        clock.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
-        clock.setTextColor(WHITE);
-        add(clockPanel,clock,4);
-        add(clockPanel,label("Meteorologia por configurar",12,MUTED,false),4);
-        addWeighted(overview,clockPanel,1,0);
-        LinearLayout status=panel();
-        status.addView(label("CENTRAL DOMÉSTICA",12,VIOLET,true));
-        add(status,label("Tab 15  ·  "+battery()+"%",19,WHITE,true),8);
-        add(status,label(charging()?"Bateria a carregar":"A funcionar com bateria",
-            12,MUTED,false),3);
-        add(status,label("Voz XiaoZhi: "+mcpStatus(),12,
-            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),10);
-        add(status,button("Configurar voz",false,this::mcpSettings),10);
-        addWeighted(overview,status,1,10);
-        add(stage,overview,15);
+            new int[]{Color.rgb(42,54,92),Color.rgb(25,36,62),Color.rgb(19,37,58)});
+        clockGradient.setCornerRadius(dp(20));
+        clock.setBackground(clockGradient);
+        clock.addView(label("BEM-VINDOS A CASA",12,CYAN,true));
+        TextClock time = new TextClock(this);
+        time.setFormat24Hour("HH:mm");
+        time.setFormat12Hour("HH:mm");
+        time.setTextColor(WHITE);
+        time.setTextSize(landscape()?42:46);
+        time.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
+        add(clock,time,7);
+        add(clock,label("Rebordosa · Paredes",12,MUTED,false),5);
+        addOverview(overview,clock,0);
 
-        sectionTitle("A tua casa","Seleciona um equipamento para o controlar.");
+        LinearLayout weather = panel();
+        RebordosaWeather.State current = RebordosaWeather.read(this);
+        weather.addView(label("METEOROLOGIA  ·  EXTERIOR",12,CYAN,true));
+        LinearLayout weatherRow = horizontal();
+        TextView symbol = label(current.icon,38,GOLD,true);
+        addWeighted(weatherRow,symbol,1,0);
+        weatherRow.addView(label(current.temperature,33,WHITE,true));
+        add(weather,weatherRow,9);
+        add(weather,label(current.condition,14,WHITE,true),7);
+        add(weather,label("Humidade " + current.humidity,13,MUTED,false),4);
+        add(weather,label(current.updated,10,MUTED,false),7);
+        addOverview(overview,weather,10);
+
+        LinearLayout status=panel();
+        status.addView(label("ESTADO DA CENTRAL",12,VIOLET,true));
+        add(status,label("TAB 15   " + battery() + "%",21,WHITE,true),14);
+        add(status,label(charging()?"Em carregamento":"A funcionar com bateria",
+            12,MUTED,false),5);
+        add(status,label("XiaoZhi MCP: "+mcpStatus(),12,
+            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),9);
+        add(status,button("Configurar voz",false,this::mcpSettings),10);
+        addOverview(overview,status,10);
+        add(stage,overview,16);
+
+        sectionTitle("A tua casa","Dispositivos, entretenimento e acessos rápidos.");
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?3:2;
         grid.setColumnCount(cols);
         addTile(grid,0,cols,"TV da Sala",savedIp().isEmpty()?
-            "LG webOS · configurar":"LG webOS · pronta para testar","▣",CYAN,"tv");
-        addTile(grid,1,cols,"LUMI DESK","Assistente de voz · ESP32-S3","◈",VIOLET,"lumi");
-        addTile(grid,2,cols,"Tab 15","Central · "+battery()+"%","▤",GREEN,"tablet");
-        addTile(grid,3,cols,"Aspirador","Alfawise · por configurar","⌁",GOLD,"vacuum");
-        addTile(grid,4,cols,"Climatização","AC da Sala · por configurar","❄",CYAN,"ac");
-        addTile(grid,5,cols,"Tomada Wi-Fi","Ainda não instalada","+",MUTED,"plug");
-        add(stage,grid,11);
+            "LG webOS · por configurar":"LG webOS · controlo disponível","▣",CYAN,"tv");
+        addTile(grid,1,cols,"LUMI DESK","Assistente · voz e expressões","◈",VIOLET,"lumi");
+        addTile(grid,2,cols,"Câmara Varanda","IPC-TA22C-G · vídeo por integrar","◉",GREEN,"camera");
+        addTile(grid,3,cols,"Spotify","Abrir música e playlists","♫",GREEN,"spotify");
+        addTile(grid,4,cols,"Telemóvel Leonardo","Localizar através da Google","⌖",GOLD,"phone_leonardo");
+        addTile(grid,5,cols,"Aspirador","Alfawise · por configurar","⌁",MUTED,"vacuum");
+        addTile(grid,6,cols,"AC da Sala","Climatização · por configurar","❄",CYAN,"ac");
+        addTile(grid,7,cols,"Tab 15","Central · bateria " + battery() + "%","▤",VIOLET,"tablet");
+        addTile(grid,8,cols,"Tomada Wi-Fi","Gestão da carga · futuramente","⚡",MUTED,"plug");
+        add(stage,grid,12);
 
         LinearLayout quick=panel();
-        quick.addView(label("CONTROLOS RÁPIDOS   /   TV DA SALA",12,MUTED,true));
+        quick.addView(label("CONTROLOS RÁPIDOS  /  TV DA SALA",12,MUTED,true));
         LinearLayout commands=horizontal();
-        addWeighted(commands,button("Volume +",false,
+        addWeighted(commands,button("Vol. +",false,
             ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
-        addWeighted(commands,button("Volume −",false,
+        addWeighted(commands,button("Vol. −",false,
             ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
         addWeighted(commands,button("YouTube",false,
             ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
@@ -414,6 +452,11 @@ public final class MainActivity extends Activity {
                 tvCommand("ssap://system/turnOff",false)).show()),1,7);
         add(quick,commands,12);
         add(stage,quick,14);
+    }
+
+    private void addOverview(LinearLayout row, View tile, int margin) {
+        if (landscape()) addWeighted(row,tile,1,margin);
+        else add(row,tile,margin);
     }
 
     private String mcpStatus() {
@@ -473,11 +516,24 @@ public final class MainActivity extends Activity {
     private void addTile(GridLayout grid,int index,int columns,String name,
                          String detailText,String symbol,int accent,String device) {
         LinearLayout tile=vertical();
-        tile.setBackground(borderFill(PANEL,19,STROKE));
-        tile.setPadding(dp(16),dp(16),dp(14),dp(16));
-        TextView icon=label(symbol,24,accent,true);
-        tile.addView(icon);
-        add(tile,label(name,16,WHITE,true),13);
+        GradientDrawable gradient=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(33,45,67),Color.rgb(23,31,47)});
+        gradient.setCornerRadius(dp(18));
+        gradient.setStroke(dp(1),STROKE);
+        tile.setBackground(gradient);
+        tile.setPadding(dp(16),dp(13),dp(13),dp(15));
+        LinearLayout upper=horizontal();
+        TextView icon=label(symbol,27,accent,true);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(fill(Color.rgb(43,55,76),13));
+        icon.setPadding(dp(7),dp(4),dp(7),dp(4));
+        upper.addView(icon, new LinearLayout.LayoutParams(dp(55),dp(47)));
+        TextView arrow=label("↗",18,MUTED,false);
+        arrow.setGravity(Gravity.RIGHT);
+        addWeighted(upper,arrow,1,9);
+        tile.addView(upper);
+        add(tile,label(name,16,WHITE,true),9);
         add(tile,label(detailText,12,MUTED,false),5);
         tile.setOnClickListener(v->{
             activeDevice=device;
@@ -489,30 +545,37 @@ public final class MainActivity extends Activity {
         p.height=ViewGroup.LayoutParams.MATCH_PARENT;
         p.columnSpec=GridLayout.spec(index%columns,1f);
         p.rowSpec=GridLayout.spec(index/columns,1f);
-        p.setMargins(dp(3),dp(4),dp(3),dp(4));
+        p.setMargins(dp(4),dp(4),dp(4),dp(4));
         grid.addView(tile,p);
     }
 
     private void drawDevices() {
-        heading("Dispositivos","Um cartão por equipamento, com os controlos no mesmo sítio.");
-        sectionTitle("Casa e LUMI","Seleciona o equipamento que pretendes gerir.");
+        heading("Dispositivos","A tua casa e os serviços que utilizas, num único painel.");
+        sectionTitle("Casa e LUMI","Seleciona um equipamento para consultar as opções.");
         GridLayout grid=new GridLayout(this);
-        grid.setColumnCount(landscape()?3:2);
-        String[] keys={"tv","lumi","tablet","vacuum","ac","plug"};
-        String[] names={"TV da Sala","LUMI DESK","Tab 15","Aspirador","Ar condicionado","Tomada Wi-Fi"};
-        String[] desc={"LG webOS","ESP32-S3","Central Android","Alfawise","Sala","Por adicionar"};
-        String[] sym={"TV","AI","TAB","⌁","AC","+"};
-        int[] colors={CYAN,VIOLET,GREEN,GOLD,CYAN,MUTED};
         int col=landscape()?3:2;
+        grid.setColumnCount(col);
+        String[] keys={"tv","lumi","tablet","camera","vacuum","ac","plug",
+            "phone_deolinda","phone_tiago","phone_leonardo","spotify"};
+        String[] names={"TV da Sala","LUMI DESK","Tab 15","Câmara Varanda",
+            "Aspirador","AC da Sala","Tomada Wi-Fi","Telemóvel Deolinda",
+            "Telemóvel Tiago","Telemóvel Leonardo","Spotify"};
+        String[] descriptions={"LG webOS","Assistente ESP32-S3","Central Android",
+            "IPC-TA22C-G","Alfawise","Por configurar","Por instalar",
+            "Find Hub Google","Find Hub Google","Find Hub Google","Música"};
+        String[] symbols={"▣","◈","▤","◉","⌁","❄","⚡","⌖","⌖","⌖","♫"};
+        int[] accents={CYAN,VIOLET,GREEN,GREEN,MUTED,CYAN,MUTED,
+            GOLD,GOLD,GOLD,GREEN};
         for(int i=0;i<keys.length;i++){
             final String key=keys[i];
             LinearLayout tile=vertical();
             boolean active=key.equals(activeDevice);
-            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,active?colors[i]:STROKE));
+            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,
+                active?accents[i]:STROKE));
             tile.setPadding(dp(13),dp(13),dp(11),dp(14));
-            tile.addView(label(sym[i],16,colors[i],true));
-            add(tile,label(names[i],14,WHITE,true),6);
-            add(tile,label(desc[i],11,MUTED,false),3);
+            tile.addView(label(symbols[i],22,accents[i],true));
+            add(tile,label(names[i],14,WHITE,true),8);
+            add(tile,label(descriptions[i],11,MUTED,false),3);
             tile.setOnClickListener(v->{activeDevice=key;draw();});
             GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
             lp.width=0;
@@ -526,13 +589,78 @@ public final class MainActivity extends Activity {
         if("tv".equals(activeDevice)) tvDetails();
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
+        else if("camera".equals(activeDevice)) cameraDetails();
+        else if("phone_deolinda".equals(activeDevice)) phoneDetails("Deolinda");
+        else if("phone_tiago".equals(activeDevice)) phoneDetails("Tiago");
+        else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
+        else if("spotify".equals(activeDevice)) spotifyDetails();
         else if("vacuum".equals(activeDevice)) placeholderDetails("Aspirador Alfawise",
-            "Para adicionar comandos reais precisamos do modelo exato e da ligação utilizada pelo aspirador. Nenhum comando foi enviado.");
+            "É necessário confirmar o modelo exato e a interface de controlo. Os comandos não estão ainda ligados.");
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
-            "Para controlar o AC precisamos de identificar a marca e saber se o comando é Wi-Fi ou apenas infravermelhos.");
+            "É necessário identificar a marca e o método de controlo (Wi-Fi ou infravermelhos).");
         else placeholderDetails("Tomada inteligente",
-            "Ainda não existe uma tomada associada. Quando a comprares, preparamos a gestão automática da carga entre 40% e 80%.");
+            "A tomada ainda não foi instalada. A gestão da carga do tablet continua desativada.");
     }
+
+    private void phoneDetails(String owner) {
+        LinearLayout c=detail();
+        c.addView(label("Telemóvel " + owner,22,WHITE,true));
+        add(c,label("LOCALIZAÇÃO EXTERNA  ·  GOOGLE FIND HUB",12,CYAN,true),8);
+        add(c,label("Abre o localizador oficial da Google. Depois de iniciares sessão com uma conta autorizada, seleciona o telemóvel e usa «Reproduzir som». O Hub não obtém a localização nem faz tocar o equipamento diretamente.",13,MUTED,false),13);
+        add(c,button("Localizar / fazer tocar (Google)",true,()->openFindHub(owner)),15);
+        if("Leonardo".equals(owner)) add(c,label("A conta e as permissões familiares têm de permitir encontrar o telemóvel do Leonardo. Não é necessário guardar passwords no Hub.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void openFindHub(String owner) {
+        new AlertDialog.Builder(this)
+            .setTitle("Localizar telemóvel " + owner)
+            .setMessage("O Google Find Hub vai abrir fora do LUMI Hub. Seleciona o telemóvel certo na conta Google autorizada e toca em «Reproduzir som». Este botão não executa diretamente o toque.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Abrir Google Find Hub",(dialog,which)->
+                openExternal("https://www.google.com/android/find/"))
+            .show();
+    }
+
+    private void cameraDetails() {
+        LinearLayout c=detail();
+        c.addView(label("Câmara da Varanda",22,WHITE,true));
+        add(c,label("IPC-TA22C-G  ·  VISUALIZAÇÃO POR INTEGRAR",12,GOLD,true),8);
+        add(c,label("A visualização ao vivo dentro do Hub ainda não está ligada. Se esta câmara estiver configurada na Imou Life, podes abrir essa aplicação para aceder ao vídeo.",13,MUTED,false),12);
+        add(c,button("Abrir Imou Life",true,()->
+            openAppOrWeb("com.mm.android.smartlifeiot",
+                "https://play.google.com/store/apps/details?id=com.mm.android.smartlifeiot")),14);
+        add(c,label("Numa futura versão poderemos testar vídeo integrado por RTSP/ONVIF, caso o modelo e as definições da câmara o permitam. Nunca introduzas a palavra-passe da câmara num link público.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void spotifyDetails() {
+        LinearLayout c=detail();
+        c.addView(label("Spotify",23,WHITE,true));
+        add(c,label("MÚSICA  ·  APLICAÇÃO EXTERNA",12,GREEN,true),7);
+        add(c,label("Abre o Spotify instalado no tablet. Se não estiver disponível, abre a versão Web para entrares na tua conta e escolheres música.",13,MUTED,false),12);
+        add(c,button("Abrir Spotify",true,()->
+            openAppOrWeb("com.spotify.music","https://open.spotify.com/")),12);
+        add(c,label("A reprodução, os dispositivos Spotify Connect e as playlists ainda não são controlados diretamente pela LUMI.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void openAppOrWeb(String packageName,String fallback) {
+        try {
+            Intent launcher=getPackageManager().getLaunchIntentForPackage(packageName);
+            if(launcher!=null){startActivity(launcher);return;}
+        }catch(Exception ignored){}
+        openExternal(fallback);
+    }
+
+    private void openExternal(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        }catch(Exception error) {
+            notice("Abrir serviço","Não foi possível abrir a aplicação ou página: "+error.getMessage());
+        }
+    }
+
     private void placeholderDetails(String title,String explanation) {
         LinearLayout c=detail();
         c.addView(label(title,20,WHITE,true));

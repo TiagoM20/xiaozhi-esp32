@@ -498,11 +498,22 @@ public final class MainActivity extends Activity {
     private void addTile(GridLayout grid,int index,int columns,String name,
                          String detailText,String symbol,int accent,String device) {
         LinearLayout tile=vertical();
-        tile.setBackground(borderFill(PANEL,19,STROKE));
-        tile.setPadding(dp(16),dp(16),dp(14),dp(16));
-        TextView icon=label(symbol,24,accent,true);
-        tile.addView(icon);
-        add(tile,label(name,16,WHITE,true),13);
+        GradientDrawable gradient=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(33,45,67),Color.rgb(23,31,47)});
+        gradient.setCornerRadius(dp(18));
+        gradient.setStroke(dp(1),STROKE);
+        tile.setBackground(gradient);
+        tile.setPadding(dp(16),dp(13),dp(13),dp(15));
+        LinearLayout upper=horizontal();
+        TextView icon=label(symbol,27,accent,true);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(fill(Color.rgb(43,55,76),13));
+        icon.setPadding(dp(7),dp(4),dp(7),dp(4));
+        addWeighted(upper,icon,1,0);
+        upper.addView(label("↗",18,MUTED,false));
+        tile.addView(upper);
+        add(tile,label(name,16,WHITE,true),9);
         add(tile,label(detailText,12,MUTED,false),5);
         tile.setOnClickListener(v->{
             activeDevice=device;
@@ -514,30 +525,37 @@ public final class MainActivity extends Activity {
         p.height=ViewGroup.LayoutParams.MATCH_PARENT;
         p.columnSpec=GridLayout.spec(index%columns,1f);
         p.rowSpec=GridLayout.spec(index/columns,1f);
-        p.setMargins(dp(3),dp(4),dp(3),dp(4));
+        p.setMargins(dp(4),dp(4),dp(4),dp(4));
         grid.addView(tile,p);
     }
 
     private void drawDevices() {
-        heading("Dispositivos","Um cartão por equipamento, com os controlos no mesmo sítio.");
-        sectionTitle("Casa e LUMI","Seleciona o equipamento que pretendes gerir.");
+        heading("Dispositivos","A tua casa e os serviços que utilizas, num único painel.");
+        sectionTitle("Casa e LUMI","Seleciona um equipamento para consultar as opções.");
         GridLayout grid=new GridLayout(this);
-        grid.setColumnCount(landscape()?3:2);
-        String[] keys={"tv","lumi","tablet","vacuum","ac","plug"};
-        String[] names={"TV da Sala","LUMI DESK","Tab 15","Aspirador","Ar condicionado","Tomada Wi-Fi"};
-        String[] desc={"LG webOS","ESP32-S3","Central Android","Alfawise","Sala","Por adicionar"};
-        String[] sym={"TV","AI","TAB","⌁","AC","+"};
-        int[] colors={CYAN,VIOLET,GREEN,GOLD,CYAN,MUTED};
         int col=landscape()?3:2;
+        grid.setColumnCount(col);
+        String[] keys={"tv","lumi","tablet","camera","vacuum","ac","plug",
+            "phone_deolinda","phone_tiago","phone_leonardo","spotify"};
+        String[] names={"TV da Sala","LUMI DESK","Tab 15","Câmara Varanda",
+            "Aspirador","AC da Sala","Tomada Wi-Fi","Telemóvel Deolinda",
+            "Telemóvel Tiago","Telemóvel Leonardo","Spotify"};
+        String[] descriptions={"LG webOS","Assistente ESP32-S3","Central Android",
+            "IPC-TA22C-G","Alfawise","Por configurar","Por instalar",
+            "Find Hub Google","Find Hub Google","Find Hub Google","Música"};
+        String[] symbols={"▣","◈","▤","◉","⌁","❄","⚡","⌖","⌖","⌖","♫"};
+        int[] accents={CYAN,VIOLET,GREEN,GREEN,MUTED,CYAN,MUTED,
+            GOLD,GOLD,GOLD,GREEN};
         for(int i=0;i<keys.length;i++){
             final String key=keys[i];
             LinearLayout tile=vertical();
             boolean active=key.equals(activeDevice);
-            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,active?colors[i]:STROKE));
+            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,
+                active?accents[i]:STROKE));
             tile.setPadding(dp(13),dp(13),dp(11),dp(14));
-            tile.addView(label(sym[i],16,colors[i],true));
-            add(tile,label(names[i],14,WHITE,true),6);
-            add(tile,label(desc[i],11,MUTED,false),3);
+            tile.addView(label(symbols[i],22,accents[i],true));
+            add(tile,label(names[i],14,WHITE,true),8);
+            add(tile,label(descriptions[i],11,MUTED,false),3);
             tile.setOnClickListener(v->{activeDevice=key;draw();});
             GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
             lp.width=0;
@@ -551,13 +569,78 @@ public final class MainActivity extends Activity {
         if("tv".equals(activeDevice)) tvDetails();
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
+        else if("camera".equals(activeDevice)) cameraDetails();
+        else if("phone_deolinda".equals(activeDevice)) phoneDetails("Deolinda");
+        else if("phone_tiago".equals(activeDevice)) phoneDetails("Tiago");
+        else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
+        else if("spotify".equals(activeDevice)) spotifyDetails();
         else if("vacuum".equals(activeDevice)) placeholderDetails("Aspirador Alfawise",
-            "Para adicionar comandos reais precisamos do modelo exato e da ligação utilizada pelo aspirador. Nenhum comando foi enviado.");
+            "É necessário confirmar o modelo exato e a interface de controlo. Os comandos não estão ainda ligados.");
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
-            "Para controlar o AC precisamos de identificar a marca e saber se o comando é Wi-Fi ou apenas infravermelhos.");
+            "É necessário identificar a marca e o método de controlo (Wi-Fi ou infravermelhos).");
         else placeholderDetails("Tomada inteligente",
-            "Ainda não existe uma tomada associada. Quando a comprares, preparamos a gestão automática da carga entre 40% e 80%.");
+            "A tomada ainda não foi instalada. A gestão da carga do tablet continua desativada.");
     }
+
+    private void phoneDetails(String owner) {
+        LinearLayout c=detail();
+        c.addView(label("Telemóvel " + owner,22,WHITE,true));
+        add(c,label("LOCALIZAÇÃO EXTERNA  ·  GOOGLE FIND HUB",12,CYAN,true),8);
+        add(c,label("Abre o localizador oficial da Google. Depois de iniciares sessão com uma conta autorizada, seleciona o telemóvel e usa «Reproduzir som». O Hub não obtém a localização nem faz tocar o equipamento diretamente.",13,MUTED,false),13);
+        add(c,button("Localizar / fazer tocar (Google)",true,()->openFindHub(owner)),15);
+        add(c,label("Para o telemóvel do Leonardo, a conta e as permissões familiares têm de permitir encontrá-lo. Não é necessário guardar passwords no Hub.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void openFindHub(String owner) {
+        new AlertDialog.Builder(this)
+            .setTitle("Localizar telemóvel " + owner)
+            .setMessage("O Google Find Hub vai abrir fora do LUMI Hub. Seleciona o telemóvel certo na conta Google autorizada e toca em «Reproduzir som». Este botão não executa diretamente o toque.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Abrir Google Find Hub",(dialog,which)->
+                openExternal("https://www.google.com/android/find/"))
+            .show();
+    }
+
+    private void cameraDetails() {
+        LinearLayout c=detail();
+        c.addView(label("Câmara da Varanda",22,WHITE,true));
+        add(c,label("IPC-TA22C-G  ·  VISUALIZAÇÃO POR INTEGRAR",12,GOLD,true),8);
+        add(c,label("A visualização ao vivo dentro do Hub ainda não está ligada. Se esta câmara estiver configurada na Imou Life, podes abrir essa aplicação para aceder ao vídeo.",13,MUTED,false),12);
+        add(c,button("Abrir Imou Life",true,()->
+            openAppOrWeb("com.mm.android.smartlifeiot",
+                "https://play.google.com/store/apps/details?id=com.mm.android.smartlifeiot")),14);
+        add(c,label("Numa futura versão poderemos testar vídeo integrado por RTSP/ONVIF, caso o modelo e as definições da câmara o permitam. Nunca introduzas a palavra-passe da câmara num link público.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void spotifyDetails() {
+        LinearLayout c=detail();
+        c.addView(label("Spotify",23,WHITE,true));
+        add(c,label("MÚSICA  ·  APLICAÇÃO EXTERNA",12,GREEN,true),7);
+        add(c,label("Abre o Spotify instalado no tablet. Se não estiver disponível, abre a versão Web para entrares na tua conta e escolheres música.",13,MUTED,false),12);
+        add(c,button("Abrir Spotify",true,()->
+            openAppOrWeb("com.spotify.music","https://open.spotify.com/")),12);
+        add(c,label("A reprodução, os dispositivos Spotify Connect e as playlists ainda não são controlados diretamente pela LUMI.",12,MUTED,false),10);
+        add(stage,c,16);
+    }
+
+    private void openAppOrWeb(String packageName,String fallback) {
+        try {
+            Intent launcher=getPackageManager().getLaunchIntentForPackage(packageName);
+            if(launcher!=null){startActivity(launcher);return;}
+        }catch(Exception ignored){}
+        openExternal(fallback);
+    }
+
+    private void openExternal(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        }catch(Exception error) {
+            notice("Abrir serviço","Não foi possível abrir a aplicação ou página: "+error.getMessage());
+        }
+    }
+
     private void placeholderDetails(String title,String explanation) {
         LinearLayout c=detail();
         c.addView(label(title,20,WHITE,true));

@@ -26,6 +26,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.TextClock;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.net.HttpURLConnection;
@@ -58,6 +62,7 @@ public final class MainActivity extends Activity {
     private String activeDevice = "tv";
     private LinearLayout stage;
     private MemoryDb memories;
+    private static final int PICK_MEMORY_JSON = 9441;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -65,6 +70,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         memories = new MemoryDb(this);
+        seedStarterMemories();
         draw();
     }
     @Override protected void onResume() {
@@ -159,24 +165,113 @@ public final class MainActivity extends Activity {
         return getResources().getConfiguration().orientation
             == Configuration.ORIENTATION_LANDSCAPE;
     }
+    private void seedStarterMemories() {
+        SharedPreferences p = getSharedPreferences("hub", MODE_PRIVATE);
+        if (p.getBoolean("starter_memories_v7", false)) return;
+        // Nunca guardar dados privados do agregado no codigo publico.
+        memories.saveIfMissing("Idioma e estilo", "A LUMI deve conversar naturalmente em portugues de Portugal, com respostas claras e humanas.");
+        memories.saveIfMissing("Historias favoritas", "Gostamos de historias interativas com Sonic, Mario e Crash Bandicoot, escolhas e personagens recorrentes.");
+        memories.saveIfMissing("Privacidade", "A LUMI deve pedir autorizacao antes de guardar ou partilhar informacao pessoal sensivel.");
+        p.edit().putBoolean("starter_memories_v7", true).apply();
+    }
+
+    private void chooseMemoryFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+            new String[]{"application/json", "text/plain", "application/octet-stream"});
+        startActivityForResult(intent, PICK_MEMORY_JSON);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_MEMORY_JSON || resultCode != RESULT_OK || data == null) return;
+        try (InputStream input = getContentResolver().openInputStream(data.getData());
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            if (input == null) throw new Exception("Ficheiro inacessivel.");
+            byte[] buffer = new byte[4096];
+            int n;
+            while ((n = input.read(buffer)) > 0) {
+                if (out.size() + n > 128 * 1024) throw new Exception("Ficheiro demasiado grande.");
+                out.write(buffer, 0, n);
+            }
+            String json = new String(out.toByteArray(), StandardCharsets.UTF_8);
+            JSONArray entries = json.trim().startsWith("[")?
+                new JSONArray(json):new JSONObject(json).getJSONArray("memories");
+            if (entries.length() > 100) throw new Exception("Maximo de 100 memorias.");
+            int inserted = 0;
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject item = entries.optJSONObject(i);
+                if (item == null) continue;
+                String title = item.optString("title", "").trim();
+                String detail = item.optString("detail", "").trim();
+                if (title.isEmpty() || title.length() > 100 || detail.length() > 1500) continue;
+                if (memories.saveIfMissing(title, detail)) inserted++;
+            }
+            draw();
+            notice("Memorias importadas", inserted + " novas memorias guardadas no tablet. Ainda nao ligadas as conversas da LUMI DESK.");
+        } catch (Exception error) {
+            notice("Importacao de memorias", "Nao foi possivel importar: " + error.getMessage());
+        }
+    }
+
     private void draw() {
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
+        LinearLayout workspace = horizontal();
+        workspace.setGravity(Gravity.TOP);
+        root.addView(workspace, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        if (landscape()) addSidebar(workspace);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        root.addView(scroll, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        workspace.addView(scroll, new LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         stage = vertical();
-        stage.setPadding(dp(20), dp(18), dp(20), dp(24));
+        stage.setPadding(dp(landscape()?18:16), dp(landscape()?13:16),
+            dp(landscape()?18:16), dp(24));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Memórias".equals(page)) drawMemories();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
-        bottomNavigation(root);
+        if (!landscape()) bottomNavigation(root);
     }
+
+    private void addSidebar(LinearLayout workspace) {
+        LinearLayout sidebar = vertical();
+        sidebar.setBackgroundColor(Color.rgb(17, 25, 42));
+        sidebar.setPadding(dp(8), dp(22), dp(8), dp(10));
+        TextView logo = label("◈", 32, CYAN, true);
+        logo.setGravity(Gravity.CENTER);
+        sidebar.addView(logo);
+        TextView lumi = label("LUMI", 12, WHITE, true);
+        lumi.setGravity(Gravity.CENTER);
+        add(sidebar, lumi, 4);
+        String[] symbols = {"⌂", "▦", "◉", "↧"};
+        for (int i = 0; i < navItems.length; i++) {
+            final String name = navItems[i];
+            boolean selected = name.equals(page);
+            LinearLayout option = vertical();
+            option.setGravity(Gravity.CENTER);
+            option.setPadding(dp(2), dp(12), dp(2), dp(12));
+            option.setBackground(fill(selected?PANEL_BRIGHT:Color.rgb(17,25,42), 14));
+            TextView symbol = label(symbols[i], 22, selected?CYAN:MUTED, true);
+            symbol.setGravity(Gravity.CENTER);
+            option.addView(symbol);
+            TextView caption = label(name, 11, selected?WHITE:MUTED, selected);
+            caption.setGravity(Gravity.CENTER);
+            option.addView(caption);
+            option.setOnClickListener(v -> { page = name; draw(); });
+            add(sidebar, option, 15);
+        }
+        workspace.addView(sidebar, new LinearLayout.LayoutParams(
+            dp(110), ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
     private void bottomNavigation(LinearLayout root) {
         LinearLayout bar = horizontal();
         bar.setBackgroundColor(Color.rgb(16, 24, 39));
@@ -252,70 +347,129 @@ public final class MainActivity extends Activity {
             .getString("lg_last_status","Por verificar");
     }
     private void drawStation() {
-        LinearLayout hero=vertical();
-        GradientDrawable gradient=new GradientDrawable(
+        LinearLayout top = horizontal();
+        LinearLayout headings = vertical();
+        headings.addView(label("LUMI  /  CASA INTELIGENTE",12,CYAN,true));
+        add(headings,label("Estação",27,WHITE,true),4);
+        add(headings,label(date("EEEE, d 'de' MMMM"),12,MUTED,false),4);
+        addWeighted(top,headings,1,0);
+        top.addView(label(serviceRunning()?"●  HUB ATIVO":"●  HUB PARADO",12,
+            serviceRunning()?GREEN:GOLD,true));
+        add(stage,top,3);
+
+        LinearLayout overview = horizontal();
+        LinearLayout clockPanel = panel();
+        GradientDrawable gradient = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(36,46,85),Color.rgb(28,51,70),Color.rgb(21,35,51)});
-        gradient.setCornerRadius(dp(26));
-        hero.setBackground(gradient);
-        hero.setPadding(dp(24),dp(23),dp(24),dp(26));
-        hero.addView(label("LUMI   /   ESTAÇÃO",13,CYAN,true));
-        Calendar now=Calendar.getInstance();
-        String greeting=now.get(Calendar.HOUR_OF_DAY)<12?"Bom dia":
-            now.get(Calendar.HOUR_OF_DAY)<19?"Boa tarde":"Boa noite";
-        add(hero,label(greeting,30,WHITE,true),11);
-        LinearLayout clock=horizontal();
-        TextView clockText=label(date("HH:mm"),landscape()?52:44,WHITE,true);
-        addWeighted(clock,clockText,1,0);
-        LinearLayout day=vertical();
-        day.addView(label(date("EEEE"),15,WHITE,true));
-        add(day,label(date("d 'de' MMMM"),13,MUTED,false),4);
-        clock.addView(day);
-        add(hero,clock,6);
-        add(hero,label("A tua casa, a LUMI DESK e os teus dispositivos num só lugar.",13,
-            Color.rgb(210,220,235),false),10);
-        add(stage,hero,1);
+            new int[]{Color.rgb(35,47,82),Color.rgb(24,36,61),Color.rgb(23,39,58)});
+        gradient.setCornerRadius(dp(20));
+        clockPanel.setBackground(gradient);
+        clockPanel.addView(label("AGORA EM CASA",12,CYAN,true));
+        TextClock clock = new TextClock(this);
+        clock.setFormat24Hour("HH:mm");
+        clock.setFormat12Hour("HH:mm");
+        clock.setTextSize(landscape()?47:39);
+        clock.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
+        clock.setTextColor(WHITE);
+        add(clockPanel,clock,4);
+        add(clockPanel,label("Meteorologia por configurar",12,MUTED,false),4);
+        addWeighted(overview,clockPanel,1,0);
+        LinearLayout status=panel();
+        status.addView(label("CENTRAL DOMÉSTICA",12,VIOLET,true));
+        add(status,label("Tab 15  ·  "+battery()+"%",19,WHITE,true),8);
+        add(status,label(charging()?"Bateria a carregar":"A funcionar com bateria",
+            12,MUTED,false),3);
+        add(status,label("Voz XiaoZhi: "+mcpStatus(),12,
+            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),10);
+        add(status,button("Configurar voz",false,this::mcpSettings),10);
+        addWeighted(overview,status,1,10);
+        add(stage,overview,15);
 
-        LinearLayout status=horizontal();
-        status.setPadding(dp(13),dp(14),dp(13),dp(14));
-        status.setBackground(borderFill(PANEL,15,STROKE));
-        TextView s=label("●  "+serviceText(),14,serviceRunning()?GREEN:GOLD,true);
-        addWeighted(status,s,1,0);
-        TextView b=label("TAB 15  "+battery()+"%",14,CYAN,true);
-        status.addView(b);
-        add(stage,status,13);
-
-        sectionTitle("A tua casa","Acede rapidamente a cada dispositivo.");
+        sectionTitle("A tua casa","Seleciona um equipamento para o controlar.");
         GridLayout grid=new GridLayout(this);
-        int cols=landscape()?2:2;
+        int cols=landscape()?3:2;
         grid.setColumnCount(cols);
-        addTile(grid,0,cols,"TV da Sala","LG webOS • "+(savedIp().isEmpty()?
-            "Por configurar":"Emparelhada ou pronta para testar"),"TV",CYAN,"tv");
-        addTile(grid,1,cols,"LUMI DESK","Assistente • ligação direta pendente",
-            "AI",VIOLET,"lumi");
-        addTile(grid,2,cols,"Aspirador","Alfawise • por configurar","⌁",GOLD,"vacuum");
-        addTile(grid,3,cols,"Ar condicionado","Sala • por configurar","AC",GREEN,"ac");
-        add(stage,grid,12);
+        addTile(grid,0,cols,"TV da Sala",savedIp().isEmpty()?
+            "LG webOS · configurar":"LG webOS · pronta para testar","▣",CYAN,"tv");
+        addTile(grid,1,cols,"LUMI DESK","Assistente de voz · ESP32-S3","◈",VIOLET,"lumi");
+        addTile(grid,2,cols,"Tab 15","Central · "+battery()+"%","▤",GREEN,"tablet");
+        addTile(grid,3,cols,"Aspirador","Alfawise · por configurar","⌁",GOLD,"vacuum");
+        addTile(grid,4,cols,"Climatização","AC da Sala · por configurar","❄",CYAN,"ac");
+        addTile(grid,5,cols,"Tomada Wi-Fi","Ainda não instalada","+",MUTED,"plug");
+        add(stage,grid,11);
 
         LinearLayout quick=panel();
-        quick.addView(label("COMANDOS RÁPIDOS  ·  TV DA SALA",12,MUTED,true));
+        quick.addView(label("CONTROLOS RÁPIDOS   /   TV DA SALA",12,MUTED,true));
         LinearLayout commands=horizontal();
         addWeighted(commands,button("Volume +",false,
             ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
         addWeighted(commands,button("Volume −",false,
             ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
-        addWeighted(commands,button("YouTube",true,
+        addWeighted(commands,button("YouTube",false,
             ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
+        addWeighted(commands,button("Desligar",true,()->new AlertDialog.Builder(this)
+            .setTitle("Desligar TV da Sala?")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Desligar",(dialog,which)->
+                tvCommand("ssap://system/turnOff",false)).show()),1,7);
         add(quick,commands,12);
-        add(stage,quick,15);
-
-        LinearLayout hint=panel();
-        hint.addView(label("LUMI DESK · CONTROLO POR VOZ",14,WHITE,true));
-        add(hint,label("Os comandos à TV já funcionam a partir do tablet. Para dizeres "
-                +"«Olá Lumi, desliga a TV da Sala» falta ligar o servidor XiaoZhi "
-                +"ao Hub. Esse canal ainda não está ativo.",13,MUTED,false),8);
-        add(stage,hint,14);
+        add(stage,quick,14);
     }
+
+    private String mcpStatus() {
+        return getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("mcp_state","Por configurar");
+    }
+
+    private void mcpSettings() {
+        SharedPreferences p = getSharedPreferences("hub",MODE_PRIVATE);
+        LinearLayout form = vertical();
+        form.setPadding(dp(18),dp(5),dp(18),dp(5));
+        form.addView(label("Na consola XiaoZhi, abre o agente da LUMI DESK e copia o endereço MCP (wss://api.xiaozhi.me/mcp/?token=...).",14,MUTED,false));
+        EditText entry = new EditText(this);
+        entry.setSingleLine(true);
+        entry.setHint(p.getString("mcp_endpoint","").isEmpty() ?
+            "Cola aqui o endereço MCP" : "Ligação configurada · cola aqui para substituir");
+        entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
+            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        add(form,entry,11);
+        add(form,label("O token fica no armazenamento privado do Tab 15. Não o publiques no GitHub.",12,MUTED,false),7);
+        new AlertDialog.Builder(this).setTitle("LUMI DESK · Voz e MCP")
+            .setView(form)
+            .setNeutralButton("Remover ligação",(dialog,which)->{
+                p.edit().remove("mcp_endpoint")
+                    .putString("mcp_state","Por configurar").apply();
+                restartMcpService();
+            })
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar",(dialog,which)->{
+                String url=entry.getText().toString().trim();
+                if(url.isEmpty())return;
+                if(!XiaozhiMcpBridge.validEndpoint(url)) {
+                    notice("Endereço MCP inválido",
+                        "Utiliza o endereço wss://api.xiaozhi.me/mcp/?token=... do teu agente.");
+                    return;
+                }
+                p.edit().putString("mcp_endpoint",url)
+                    .putString("mcp_state","A iniciar ligação").apply();
+                restartMcpService();
+            }).show();
+    }
+
+    private void restartMcpService() {
+        if(serviceRunning()) {
+            Intent service = new Intent(this,HubService.class);
+            stopService(service);
+            try {
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
+                else startService(service);
+            } catch(Exception error) {
+                notice("Serviço Android",error.getMessage());
+            }
+        }
+        draw();
+    }
+
     private void addTile(GridLayout grid,int index,int columns,String name,
                          String detailText,String symbol,int accent,String device) {
         LinearLayout tile=vertical();
@@ -573,6 +727,10 @@ public final class MainActivity extends Activity {
             g.addView(b,lp);
         }
         add(c,g,12);
+        add(c,label("COMANDOS POR VOZ · XIAOZHI MCP",12,VIOLET,true),16);
+        add(c,label("Estado: "+mcpStatus(),13,MUTED,false),6);
+        add(c,button("Configurar ligação de voz",true,this::mcpSettings),10);
+        add(c,label("O Hub partilha comandos da TV com o agente XiaoZhi por MCP. É necessário configurar o endereço MCP e manter a central ativa. A comunicação direta com os GIFs do ESP32 ainda está por implementar.",12,MUTED,false),10);
         add(c,button("Consultar diagnósticos e logs do Hub",false,this::diagnostics),14);
         add(c,label("Os logs internos do ESP32 e o controlo remoto dos GIFs só "
             +"ficarão disponíveis depois da integração da LUMI DESK.",12,MUTED,false),10);
@@ -614,6 +772,7 @@ public final class MainActivity extends Activity {
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "
             +"partilhadas com o cérebro da LUMI DESK.",13,MUTED,false),8);
         add(c,button("+ Guardar memória",true,this::newMemory),13);
+        add(c,button("Importar memórias (ficheiro JSON)",false,this::chooseMemoryFile),8);
         add(stage,c,18);
         List<MemoryDb.Item> list=memories.all();
         if(list.isEmpty()) {

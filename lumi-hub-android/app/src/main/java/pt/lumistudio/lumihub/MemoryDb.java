@@ -44,6 +44,21 @@ public final class MemoryDb extends SQLiteOpenHelper {
         return getWritableDatabase().insertOrThrow("memories", null, values);
     }
 
+    /** Insere apenas se o mesmo titulo e conteudo ainda nao existirem. */
+    public boolean saveIfMissing(String title, String detail) {
+        if (title == null || title.trim().isEmpty()) return false;
+        if (detail == null) detail = "";
+        String t = title.trim();
+        String d = detail.trim();
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+            "SELECT 1 FROM memories WHERE title=? AND detail=? LIMIT 1",
+            new String[]{t, d})) {
+            if (cursor.moveToFirst()) return false;
+        }
+        save(t, d);
+        return true;
+    }
+
     public List<Item> all() {
         ArrayList<Item> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().rawQuery(

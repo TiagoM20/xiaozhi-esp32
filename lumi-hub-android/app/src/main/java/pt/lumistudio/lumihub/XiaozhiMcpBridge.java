@@ -193,7 +193,7 @@ public final class XiaozhiMcpBridge {
                 return;
             }
             WakeOnLan.send(mac, prefs.getString("tv_ip", ""), message ->
-                result(ws, id, message, message.startsWith("Nao foi possivel")));
+                result(ws, id, message, message.startsWith("Não foi possível")));
             return;
         }
         String action;

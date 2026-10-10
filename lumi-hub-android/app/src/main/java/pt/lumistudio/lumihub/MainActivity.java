@@ -220,20 +220,58 @@ public final class MainActivity extends Activity {
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
+        LinearLayout workspace = horizontal();
+        workspace.setGravity(Gravity.TOP);
+        root.addView(workspace, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        if (landscape()) addSidebar(workspace);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        root.addView(scroll, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        workspace.addView(scroll, new LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         stage = vertical();
-        stage.setPadding(dp(20), dp(18), dp(20), dp(24));
+        stage.setPadding(dp(landscape()?18:16), dp(landscape()?13:16),
+            dp(landscape()?18:16), dp(24));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Memórias".equals(page)) drawMemories();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
-        bottomNavigation(root);
+        if (!landscape()) bottomNavigation(root);
     }
+
+    private void addSidebar(LinearLayout workspace) {
+        LinearLayout sidebar = vertical();
+        sidebar.setBackgroundColor(Color.rgb(17, 25, 42));
+        sidebar.setPadding(dp(8), dp(22), dp(8), dp(10));
+        TextView logo = label("◈", 32, CYAN, true);
+        logo.setGravity(Gravity.CENTER);
+        sidebar.addView(logo);
+        TextView lumi = label("LUMI", 12, WHITE, true);
+        lumi.setGravity(Gravity.CENTER);
+        add(sidebar, lumi, 4);
+        String[] symbols = {"⌂", "▦", "◉", "↧"};
+        for (int i = 0; i < navItems.length; i++) {
+            final String name = navItems[i];
+            boolean selected = name.equals(page);
+            LinearLayout option = vertical();
+            option.setGravity(Gravity.CENTER);
+            option.setPadding(dp(2), dp(12), dp(2), dp(12));
+            option.setBackground(fill(selected?PANEL_BRIGHT:Color.rgb(17,25,42), 14));
+            TextView symbol = label(symbols[i], 22, selected?CYAN:MUTED, true);
+            symbol.setGravity(Gravity.CENTER);
+            option.addView(symbol);
+            TextView caption = label(name, 11, selected?WHITE:MUTED, selected);
+            caption.setGravity(Gravity.CENTER);
+            option.addView(caption);
+            option.setOnClickListener(v -> { page = name; draw(); });
+            add(sidebar, option, 15);
+        }
+        workspace.addView(sidebar, new LinearLayout.LayoutParams(
+            dp(110), ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
     private void bottomNavigation(LinearLayout root) {
         LinearLayout bar = horizontal();
         bar.setBackgroundColor(Color.rgb(16, 24, 39));

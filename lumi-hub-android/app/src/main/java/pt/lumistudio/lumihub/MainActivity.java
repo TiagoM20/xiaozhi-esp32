@@ -1045,7 +1045,19 @@ public final class MainActivity extends Activity {
     }
 
     private void drawUpdates() {
-        heading("Atualizações","Versões oficiais do LUMI Hub disponíveis no GitHub.");
+        heading("Atualizações","Versões, aparência e definições visuais da tua central.");
+        LinearLayout tabs=horizontal();
+        addWeighted(tabs,button("Versões",updatesTab.equals("Versões"),()->{
+            updatesTab="Versões";draw();
+        }),1,0);
+        addWeighted(tabs,button("Temas",updatesTab.equals("Temas"),()->{
+            updatesTab="Temas";draw();
+        }),1,9);
+        add(stage,tabs,15);
+        if("Temas".equals(updatesTab)) {
+            drawThemeSelector();
+            return;
+        }
         LinearLayout c=panel();
         c.addView(label("Versão instalada: "+versionName(),18,WHITE,true));
         add(c,label("Só as versões Android assinadas são apresentadas aqui. "
@@ -1056,6 +1068,58 @@ public final class MainActivity extends Activity {
         list.setId(17331);
         add(stage,list,12);
     }
+
+    private void drawThemeSelector() {
+        LinearLayout intro=panel();
+        intro.addView(label("Escolhe o ambiente da tua casa",20,WHITE,true));
+        add(intro,label("Ao tocares num tema, as cores da Home, dos tiles e dos "
+            +"restantes ecrãs mudam de imediato. A escolha fica guardada no Tab 15.",
+            13,MUTED,false),7);
+        add(stage,intro,14);
+        GridLayout grid=new GridLayout(this);
+        int cols=landscape()?3:2;
+        grid.setColumnCount(cols);
+        for(int i=0;i<HubThemes.NAMES.length;i++) {
+            final int index=i;
+            HubThemes.Palette scheme=HubThemes.get(i);
+            LinearLayout choice=vertical();
+            choice.setGravity(Gravity.CENTER);
+            choice.setPadding(dp(14),dp(15),dp(14),dp(14));
+            choice.setBackground(borderFill(scheme.background,15,
+                themeId==i?CYAN:scheme.stroke));
+            LinearLayout swatches=horizontal();
+            int[] samples={scheme.bannerA,scheme.tileA,scheme.tileB,scheme.accent};
+            for(int swatch:samples) {
+                View dot=new View(this);
+                dot.setBackground(fill(swatch,9));
+                LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(
+                    dp(30),dp(27));
+                p.setMargins(dp(3),0,dp(3),0);
+                swatches.addView(dot,p);
+            }
+            choice.addView(swatches);
+            TextView title=label(HubThemes.NAMES[i],16,scheme.text,true);
+            title.setGravity(Gravity.CENTER);
+            add(choice,title,13);
+            TextView status=label(themeId==i?"●  Em utilização":"Tocar para aplicar",
+                12,scheme.muted,false);
+            status.setGravity(Gravity.CENTER);
+            add(choice,status,7);
+            choice.setOnClickListener(v->setTheme(index));
+            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
+            lp.width=0;
+            lp.height=dp(143);
+            lp.columnSpec=GridLayout.spec(i%cols,1f);
+            lp.rowSpec=GridLayout.spec(i/cols,1f);
+            lp.setMargins(dp(4),dp(5),dp(4),dp(5));
+            grid.addView(choice,lp);
+        }
+        add(stage,grid,13);
+        add(stage,button("Voltar à Home",true,()->{
+            page="Estação";draw();
+        }),12);
+    }
+
     private String versionName() {
         try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
         catch(Exception ignored){return "desconhecida";}

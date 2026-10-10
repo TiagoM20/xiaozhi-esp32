@@ -546,7 +546,9 @@ public final class MainActivity extends Activity {
             new int[]{Color.rgb(38,67,120),Color.rgb(32,50,100),
                 Color.rgb(27,37,79)});
         gradient.setCornerRadius(dp(11));
-        gradient.setStroke(dp(1),Color.rgb(62,90,142));
+        gradient.setStroke(dp("Dispositivos".equals(page) && item.key.equals(activeDevice)?2:1),
+            "Dispositivos".equals(page) && item.key.equals(activeDevice)
+                ?CYAN:Color.rgb(62,90,142));
         tile.setBackground(gradient);
 
         HomeIconView icon=new HomeIconView(this,item.icon,WHITE);
@@ -628,79 +630,21 @@ public final class MainActivity extends Activity {
         draw();
     }
 
-    private void addTile(GridLayout grid,int index,int columns,String name,
-                         String detailText,String symbol,int accent,String device) {
-        LinearLayout tile=vertical();
-        GradientDrawable gradient=new GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(33,45,67),Color.rgb(23,31,47)});
-        gradient.setCornerRadius(dp(18));
-        gradient.setStroke(dp(1),STROKE);
-        tile.setBackground(gradient);
-        tile.setPadding(dp(16),dp(13),dp(13),dp(15));
-        LinearLayout upper=horizontal();
-        TextView icon=label(symbol,27,accent,true);
-        icon.setGravity(Gravity.CENTER);
-        icon.setBackground(fill(Color.rgb(43,55,76),13));
-        icon.setPadding(dp(7),dp(4),dp(7),dp(4));
-        upper.addView(icon, new LinearLayout.LayoutParams(dp(55),dp(47)));
-        TextView arrow=label("↗",18,MUTED,false);
-        arrow.setGravity(Gravity.RIGHT);
-        addWeighted(upper,arrow,1,9);
-        tile.addView(upper);
-        add(tile,label(name,16,WHITE,true),9);
-        add(tile,label(detailText,12,MUTED,false),5);
-        tile.setOnClickListener(v->{
-            activeDevice=device;
-            page="Dispositivos";
-            draw();
-        });
-        GridLayout.LayoutParams p=new GridLayout.LayoutParams();
-        p.width=0;
-        p.height=ViewGroup.LayoutParams.MATCH_PARENT;
-        p.columnSpec=GridLayout.spec(index%columns,1f);
-        p.rowSpec=GridLayout.spec(index/columns,1f);
-        p.setMargins(dp(4),dp(4),dp(4),dp(4));
-        grid.addView(tile,p);
+    private void drawDevices() {
+        heading("Dispositivos","Todos os equipamentos, incluindo os que ainda vais configurar.");
+        drawSelectedDevice();
+
+        sectionTitle("A MINHA CASA","Os mesmos equipamentos que encontras na Home.");
+        GridLayout grid=new GridLayout(this);
+        int cols=landscape()?5:2;
+        grid.setColumnCount(cols);
+        for(int i=0;i<HomeDevices.ALL.length;i++){
+            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        }
+        add(stage,grid,11);
     }
 
-    private void drawDevices() {
-        heading("Dispositivos","A tua casa e os serviços que utilizas, num único painel.");
-        sectionTitle("Casa e LUMI","Seleciona um equipamento para consultar as opções.");
-        GridLayout grid=new GridLayout(this);
-        int col=landscape()?3:2;
-        grid.setColumnCount(col);
-        String[] keys={"tv","lumi","tablet","camera","vacuum","ac","plug",
-            "phone_deolinda","phone_tiago","phone_leonardo","spotify"};
-        String[] names={"TV da Sala","LUMI DESK","Tab 15","Câmara Varanda",
-            "Aspirador","AC da Sala","Tomada Wi-Fi","Telemóvel Deolinda",
-            "Telemóvel Tiago","Telemóvel Leonardo","Spotify"};
-        String[] descriptions={"LG webOS","Assistente ESP32-S3","Central Android",
-            "IPC-TA22C-G","Alfawise","Por configurar","Por instalar",
-            "Find Hub Google","Find Hub Google","Find Hub Google","Música"};
-        String[] symbols={"▣","◈","▤","◉","⌁","❄","⚡","⌖","⌖","⌖","♫"};
-        int[] accents={CYAN,VIOLET,GREEN,GREEN,MUTED,CYAN,MUTED,
-            GOLD,GOLD,GOLD,GREEN};
-        for(int i=0;i<keys.length;i++){
-            final String key=keys[i];
-            LinearLayout tile=vertical();
-            boolean active=key.equals(activeDevice);
-            tile.setBackground(borderFill(active?PANEL_BRIGHT:PANEL,16,
-                active?accents[i]:STROKE));
-            tile.setPadding(dp(13),dp(13),dp(11),dp(14));
-            tile.addView(label(symbols[i],22,accents[i],true));
-            add(tile,label(names[i],14,WHITE,true),8);
-            add(tile,label(descriptions[i],11,MUTED,false),3);
-            tile.setOnClickListener(v->{activeDevice=key;draw();});
-            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
-            lp.width=0;
-            lp.height=ViewGroup.LayoutParams.MATCH_PARENT;
-            lp.columnSpec=GridLayout.spec(i%col,1f);
-            lp.rowSpec=GridLayout.spec(i/col,1f);
-            lp.setMargins(dp(3),dp(5),dp(3),dp(5));
-            grid.addView(tile,lp);
-        }
-        add(stage,grid,12);
+    private void drawSelectedDevice() {
         if("tv".equals(activeDevice)) tvDetails();
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
@@ -710,11 +654,13 @@ public final class MainActivity extends Activity {
         else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
         else if("spotify".equals(activeDevice)) spotifyDetails();
         else if("vacuum".equals(activeDevice)) placeholderDetails("Aspirador Alfawise",
-            "É necessário confirmar o modelo exato e a interface de controlo. Os comandos não estão ainda ligados.");
+            "Equipamento reservado na LUMI. O controlo fica por configurar quando confirmarmos o modelo exato e o protocolo suportado.");
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
-            "É necessário identificar a marca e o método de controlo (Wi-Fi ou infravermelhos).");
-        else placeholderDetails("Tomada inteligente",
-            "A tomada ainda não foi instalada. A gestão da carga do tablet continua desativada.");
+            "A integração depende da marca e do protocolo Wi-Fi ou infravermelhos. Mantemos o equipamento no painel.");
+        else if("plug".equals(activeDevice)) placeholderDetails("Tomada inteligente",
+            "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
+        else placeholderDetails("Espaço para novos dispositivos",
+            "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
     }
 
     private void phoneDetails(String owner) {

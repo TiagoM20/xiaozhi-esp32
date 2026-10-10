@@ -25,6 +25,7 @@ public final class HomeDevices {
     public static final Device[] ALL = {
         new Device("lumi", "LUMI DESK", "Assistente de voz", "Casa", "lumi"),
         new Device("tv", "TV da Sala", "LG webOS", "Casa", "tv"),
+        new Device("camera_sala", "Câmara Sala", "Câmara do Tab 15", "Casa", "camera"),
         new Device("camera", "Câmara Varanda", "IPC-TA22C-G", "Casa", "camera"),
         new Device("vacuum", "Aspirador", "Alfawise · a configurar", "Casa", "vacuum"),
         new Device("tablet", "Tab 15", "Central doméstica", "Casa", "tablet"),

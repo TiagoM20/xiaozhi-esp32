@@ -3,6 +3,10 @@ package pt.lumistudio.lumihub;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -45,22 +49,27 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(12, 18, 31);
-    private static final int PANEL = Color.rgb(24, 32, 48);
-    private static final int PANEL_BRIGHT = Color.rgb(34, 44, 62);
-    private static final int WHITE = Color.rgb(245, 248, 255);
-    private static final int MUTED = Color.rgb(162, 175, 195);
-    private static final int CYAN = Color.rgb(114, 228, 239);
-    private static final int GOLD = Color.rgb(255, 187, 119);
-    private static final int VIOLET = Color.rgb(174, 154, 251);
-    private static final int GREEN = Color.rgb(139, 223, 173);
-    private static final int STROKE = Color.rgb(52, 64, 85);
+    private static int BG = Color.rgb(12, 18, 31);
+    private static int PANEL = Color.rgb(24, 32, 48);
+    private static int PANEL_BRIGHT = Color.rgb(34, 44, 62);
+    private static int WHITE = Color.rgb(245, 248, 255);
+    private static int MUTED = Color.rgb(162, 175, 195);
+    private static int CYAN = Color.rgb(114, 228, 239);
+    private static int GOLD = Color.rgb(255, 187, 119);
+    private static int VIOLET = Color.rgb(174, 154, 251);
+    private static int GREEN = Color.rgb(139, 223, 173);
+    private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
     private final String[] navItems = {"Estação", "Dispositivos", "Memórias", "Atualizações"};
     private String page = "Estação";
     private String activeDevice = "tv";
     private LinearLayout stage;
+    private HubThemes.Palette currentPalette=HubThemes.get(0);
+    private int themeId=0;
+    private String updatesTab="Versões";
+    private static final int CAMERA_REQUEST=405;
+    private static final int ADMIN_REQUEST=406;
     private MemoryDb memories;
     private static final int PICK_MEMORY_JSON = 9441;
     private final android.os.Handler weatherHandler =
@@ -234,7 +243,37 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void applyTheme() {
+        int index=getSharedPreferences("hub",MODE_PRIVATE).getInt("hub_theme",0);
+        themeId=HubThemes.bounded(index);
+        currentPalette=HubThemes.get(themeId);
+        BG=currentPalette.background;
+        PANEL=currentPalette.panel;
+        PANEL_BRIGHT=currentPalette.bright;
+        WHITE=currentPalette.text;
+        MUTED=currentPalette.muted;
+        CYAN=currentPalette.accent;
+        GOLD=currentPalette.gold;
+        VIOLET=currentPalette.violet;
+        GREEN=currentPalette.green;
+        STROKE=currentPalette.stroke;
+        getWindow().setStatusBarColor(currentPalette.nav);
+        getWindow().setNavigationBarColor(BG);
+        if(Build.VERSION.SDK_INT>=26){
+            int flags=themeId==2?
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR:0;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        }
+    }
+    private void setTheme(int selected) {
+        int index=HubThemes.bounded(selected);
+        getSharedPreferences("hub",MODE_PRIVATE).edit().putInt("hub_theme",index).apply();
+        updatesTab="Temas";
+        draw();
+    }
+
     private void draw() {
+        applyTheme();
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
@@ -262,7 +301,7 @@ public final class MainActivity extends Activity {
     private void topNavigation(LinearLayout root) {
         LinearLayout bar=horizontal();
         bar.setPadding(dp(18),dp(7),dp(15),dp(7));
-        bar.setBackgroundColor(Color.rgb(13,27,53));
+        bar.setBackgroundColor(currentPalette.nav);
         TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
         brand.setGravity(Gravity.CENTER_VERTICAL);
         brand.setOnClickListener(v->{page="Estação";draw();});
@@ -274,8 +313,8 @@ public final class MainActivity extends Activity {
                 active?WHITE:MUTED,active);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(12),dp(11),dp(12),dp(11));
-            tab.setBackground(fill(active?Color.rgb(43,81,146):
-                Color.rgb(13,27,53),9));
+            tab.setBackground(fill(active?currentPalette.activeTab:
+                currentPalette.nav,9));
             tab.setOnClickListener(v->{page=target;draw();});
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,dp(44));
@@ -319,7 +358,7 @@ public final class MainActivity extends Activity {
 
     private void bottomNavigation(LinearLayout root) {
         LinearLayout bar = horizontal();
-        bar.setBackgroundColor(Color.rgb(16, 24, 39));
+        bar.setBackgroundColor(currentPalette.nav);
         bar.setPadding(dp(10), dp(9), dp(10), dp(13));
         for (String name : navItems) {
             boolean selected = name.equals(page);
@@ -327,7 +366,7 @@ public final class MainActivity extends Activity {
                 selected ? CYAN : MUTED, selected);
             nav.setGravity(Gravity.CENTER);
             nav.setPadding(dp(4), dp(13), dp(4), dp(13));
-            nav.setBackground(fill(selected ? PANEL_BRIGHT : Color.rgb(16,24,39), 13));
+            nav.setBackground(fill(selected ? PANEL_BRIGHT : currentPalette.nav, 13));
             nav.setOnClickListener(v -> { page = name; draw(); });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 0, dp(50), 1f);
@@ -396,7 +435,11 @@ public final class MainActivity extends Activity {
         RebordosaWeather.refreshIfNeeded(this, () -> {
             if (!isFinishing() && "Estação".equals(page)) draw();
         });
-        add(stage,label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true),1);
+        LinearLayout topControls=horizontal();
+        TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
+        addWeighted(topControls,homeLabel,1,0);
+        topControls.addView(button("Apagar ecrã",false,this::screenOff));
+        add(stage,topControls,1);
 
         // Layout tipo painel mural: hora+meteorologia à esquerda, estado à direita.
         LinearLayout top = landscape()?horizontal():vertical();
@@ -404,13 +447,12 @@ public final class MainActivity extends Activity {
         LinearLayout hero=vertical();
         GradientDrawable banner=new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(32,53,115),Color.rgb(30,83,142),
-                Color.rgb(24,52,103),Color.rgb(24,31,67)});
+            new int[]{currentPalette.bannerA,currentPalette.bannerB,currentPalette.bannerC});
         banner.setCornerRadius(dp(13));
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("LUMI HOME",13,Color.rgb(198,223,255),true));
+        hero.addView(label("LUMI HOME",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -418,35 +460,39 @@ public final class MainActivity extends Activity {
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("HH:mm");
         time.setTextSize(landscape()?53:49);
-        time.setTextColor(WHITE);
+        time.setTextColor(themeId==2?currentPalette.tileText:WHITE);
         time.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
         clockGroup.addView(time);
-        add(clockGroup,label(date("EEEE, d 'de' MMMM"),13,WHITE,false),1);
+        add(clockGroup,label(date("EEEE, d 'de' MMMM"),13,
+            themeId==2?currentPalette.tileText:WHITE,false),1);
         addWeighted(info,clockGroup,1,0);
 
         RebordosaWeather.State current=RebordosaWeather.read(this);
         LinearLayout climate=vertical();
         climate.setGravity(Gravity.RIGHT);
-        TextView symbol=label(current.icon,landscape()?33:30,WHITE,true);
+        TextView symbol=label(current.icon,landscape()?33:30,
+            themeId==2?currentPalette.tileText:WHITE,true);
         symbol.setGravity(Gravity.RIGHT);
         climate.addView(symbol);
-        TextView degrees=label(current.temperature,26,WHITE,true);
+        TextView degrees=label(current.temperature,26,
+            themeId==2?currentPalette.tileText:WHITE,true);
         degrees.setGravity(Gravity.RIGHT);
         climate.addView(degrees);
-        TextView text=label(current.condition,11,WHITE,false);
+        TextView text=label(current.condition,11,
+            themeId==2?currentPalette.tileText:WHITE,false);
         text.setGravity(Gravity.RIGHT);
         climate.addView(text);
         info.addView(climate);
         add(hero,info,12);
         add(hero,label("HUMIDADE EXTERIOR   " + current.humidity
-            + "     ·     " + current.updated,11,Color.rgb(218,232,248),false),13);
+            + "     ·     " + current.updated,11,
+            themeId==2?currentPalette.tileText:Color.rgb(218,232,248),false),13);
         addOverview(top,hero,0);
 
         LinearLayout noticePanel=vertical();
         noticePanel.setPadding(dp(20),dp(16),dp(18),dp(16));
         noticePanel.setMinimumHeight(dp(187));
-        noticePanel.setBackground(borderFill(Color.rgb(27,41,79),13,
-            Color.rgb(60,80,129)));
+        noticePanel.setBackground(borderFill(currentPalette.statusPanel,13,STROKE));
         noticePanel.addView(label("ESTADO DA CASA",13,WHITE,true));
         add(noticePanel,label("●   LUMI DESK    ·    " + mcpStatus(),
             12,mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),12);
@@ -511,6 +557,7 @@ public final class MainActivity extends Activity {
             case "lumi": return "MCP · " + mcpStatus();
             case "tablet": return "Bateria " + battery() + "%";
             case "camera": return "Vídeo por integrar";
+            case "camera_sala": return "Imagem local · ao tocar";
             case "vacuum": return "Por configurar";
             case "phone_deolinda":
             case "phone_tiago":
@@ -543,22 +590,21 @@ public final class MainActivity extends Activity {
         tile.setPadding(dp(5),dp(9),dp(5),dp(8));
         GradientDrawable gradient=new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(38,67,120),Color.rgb(32,50,100),
-                Color.rgb(27,37,79)});
+            HubThemes.tileGradient(themeId,index));
         gradient.setCornerRadius(dp(11));
         gradient.setStroke(dp("Dispositivos".equals(page) && item.key.equals(activeDevice)?2:1),
             "Dispositivos".equals(page) && item.key.equals(activeDevice)
-                ?CYAN:Color.rgb(62,90,142));
+                ?CYAN:currentPalette.tileBorder);
         tile.setBackground(gradient);
 
-        HomeIconView icon=new HomeIconView(this,item.icon,WHITE);
+        HomeIconView icon=new HomeIconView(this,item.icon,currentPalette.tileIcon);
         tile.addView(icon,new LinearLayout.LayoutParams(dp(47),dp(47)));
-        TextView name=label(item.name,landscape()?13:13,WHITE,true);
+        TextView name=label(item.name,13,currentPalette.tileText,true);
         name.setMaxLines(2);
         name.setGravity(Gravity.CENTER);
         add(tile,name,6);
         TextView status=label(deviceDescription(item),11,
-            deviceAccent(item),false);
+            themeId==2?currentPalette.tileText:deviceAccent(item),false);
         status.setMaxLines(2);
         status.setGravity(Gravity.CENTER);
         add(tile,status,3);
@@ -649,6 +695,7 @@ public final class MainActivity extends Activity {
         else if("lumi".equals(activeDevice)) lumiDetails();
         else if("tablet".equals(activeDevice)) tabletDetails();
         else if("camera".equals(activeDevice)) cameraDetails();
+        else if("camera_sala".equals(activeDevice)) cameraRoomDetails();
         else if("phone_deolinda".equals(activeDevice)) phoneDetails("Deolinda");
         else if("phone_tiago".equals(activeDevice)) phoneDetails("Tiago");
         else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
@@ -661,6 +708,67 @@ public final class MainActivity extends Activity {
             "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
         else placeholderDetails("Espaço para novos dispositivos",
             "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
+    }
+
+    private void cameraRoomDetails() {
+        LinearLayout card=detail();
+        card.addView(label("Câmara da Sala",23,WHITE,true));
+        add(card,label("TAB 15 · CÂMARA LOCAL",13,CYAN,true),7);
+        add(card,label("A imagem aparece apenas quando abres a pré-visualização. Não existe gravação, transmissão em rede nem acesso remoto à câmara.",13,MUTED,false),9);
+        add(card,button("Ver câmara do tablet",true,this::openRoomCamera),13);
+        add(card,label("O Android poderá pedir autorização para utilizar a câmara. Esta autorização é diferente da Câmara da Varanda.",12,MUTED,false),10);
+        add(stage,card,16);
+    }
+
+    private void openRoomCamera() {
+        if(Build.VERSION.SDK_INT>=23 &&
+           checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{Manifest.permission.CAMERA},CAMERA_REQUEST);
+            return;
+        }
+        try {
+            startActivity(new Intent(this,CameraRoomActivity.class));
+        }catch(Exception error){
+            notice("Câmara Sala","Não foi possível abrir a pré-visualização: "+error.getMessage());
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,
+                                                       int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode!=CAMERA_REQUEST) return;
+        if(grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED)
+            openRoomCamera();
+        else
+            notice("Câmara Sala","O acesso à câmara não foi autorizado. Podes permitir nas definições do Android.");
+    }
+
+    private void screenOff() {
+        ComponentName admin=new ComponentName(this,ScreenLockAdmin.class);
+        DevicePolicyManager manager=(DevicePolicyManager)getSystemService(DEVICE_POLICY_SERVICE);
+        if(manager==null){
+            notice("Ecrã do tablet","Esta versão do Android não disponibiliza gestão de ecrã.");
+            return;
+        }
+        if(!manager.isAdminActive(admin)){
+            new AlertDialog.Builder(this)
+                .setTitle("Ativar botão Apagar ecrã")
+                .setMessage("Para apagar realmente o ecrã, o Android exige autorização de Administrador do dispositivo. O Hub pede apenas permissão para bloquear o ecrã, sem aceder a palavras-passe nem apagar dados. Poderá ser necessário o PIN ao voltar a ligar. A autorização pode ser revogada nas definições do Android. Queres abrir a autorização?")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Configurar",(dialog,which)->{
+                    Intent request=new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                    request.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,admin);
+                    request.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "Permitir ao LUMI Hub apagar o ecrã do Tab 15 quando pressionares o botão.");
+                    startActivityForResult(request,ADMIN_REQUEST);
+                }).show();
+            return;
+        }
+        try {
+            manager.lockNow();
+        } catch(SecurityException error) {
+            notice("Apagar ecrã","O Android não permitiu bloquear o ecrã. Verifica a autorização de administrador.");
+        }
     }
 
     private void phoneDetails(String owner) {
@@ -919,6 +1027,8 @@ public final class MainActivity extends Activity {
         add(c,label("COMANDOS POR VOZ · XIAOZHI MCP",12,VIOLET,true),16);
         add(c,label("Estado: "+mcpStatus(),13,MUTED,false),6);
         add(c,button("Configurar ligação de voz",true,this::mcpSettings),10);
+        add(c,button("Testar voz PT-PT offline no Tab 15",false,()->
+            startActivity(new Intent(this,OfflineVoiceLabActivity.class))),9);
         add(c,label("O Hub partilha comandos da TV com o agente XiaoZhi por MCP. É necessário configurar o endereço MCP e manter a central ativa. A comunicação direta com os GIFs do ESP32 ainda está por implementar.",12,MUTED,false),10);
         add(c,button("Consultar diagnósticos e logs do Hub",false,this::diagnostics),14);
         add(c,label("Os logs internos do ESP32 e o controlo remoto dos GIFs só "
@@ -949,6 +1059,7 @@ public final class MainActivity extends Activity {
         add(c,button(serviceRunning()?"Parar central":"Iniciar central",
             true,this::switchService),10);
         add(c,button("Ver logs e diagnóstico",false,this::diagnostics),8);
+        add(c,button("Apagar ecrã do Tab 15",false,this::screenOff),8);
         add(c,label("Gestão futura da bateria: ligar a 40%, desligar a 80%. "
             +"Sem tomada inteligente, a aplicação apenas monitoriza.",13,MUTED,false),14);
         add(stage,c,16);
@@ -1008,7 +1119,19 @@ public final class MainActivity extends Activity {
     }
 
     private void drawUpdates() {
-        heading("Atualizações","Versões oficiais do LUMI Hub disponíveis no GitHub.");
+        heading("Atualizações","Versões, aparência e definições visuais da tua central.");
+        LinearLayout tabs=horizontal();
+        addWeighted(tabs,button("Versões",updatesTab.equals("Versões"),()->{
+            updatesTab="Versões";draw();
+        }),1,0);
+        addWeighted(tabs,button("Temas",updatesTab.equals("Temas"),()->{
+            updatesTab="Temas";draw();
+        }),1,9);
+        add(stage,tabs,15);
+        if("Temas".equals(updatesTab)) {
+            drawThemeSelector();
+            return;
+        }
         LinearLayout c=panel();
         c.addView(label("Versão instalada: "+versionName(),18,WHITE,true));
         add(c,label("Só as versões Android assinadas são apresentadas aqui. "
@@ -1019,6 +1142,58 @@ public final class MainActivity extends Activity {
         list.setId(17331);
         add(stage,list,12);
     }
+
+    private void drawThemeSelector() {
+        LinearLayout intro=panel();
+        intro.addView(label("Escolhe o ambiente da tua casa",20,WHITE,true));
+        add(intro,label("Ao tocares num tema, as cores da Home, dos tiles e dos "
+            +"restantes ecrãs mudam de imediato. A escolha fica guardada no Tab 15.",
+            13,MUTED,false),7);
+        add(stage,intro,14);
+        GridLayout grid=new GridLayout(this);
+        int cols=landscape()?3:2;
+        grid.setColumnCount(cols);
+        for(int i=0;i<HubThemes.NAMES.length;i++) {
+            final int index=i;
+            HubThemes.Palette scheme=HubThemes.get(i);
+            LinearLayout choice=vertical();
+            choice.setGravity(Gravity.CENTER);
+            choice.setPadding(dp(14),dp(15),dp(14),dp(14));
+            choice.setBackground(borderFill(scheme.background,15,
+                themeId==i?CYAN:scheme.stroke));
+            LinearLayout swatches=horizontal();
+            int[] samples={scheme.bannerA,scheme.tileA,scheme.tileB,scheme.accent};
+            for(int swatch:samples) {
+                View dot=new View(this);
+                dot.setBackground(fill(swatch,9));
+                LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(
+                    dp(30),dp(27));
+                p.setMargins(dp(3),0,dp(3),0);
+                swatches.addView(dot,p);
+            }
+            choice.addView(swatches);
+            TextView title=label(HubThemes.NAMES[i],16,scheme.text,true);
+            title.setGravity(Gravity.CENTER);
+            add(choice,title,13);
+            TextView status=label(themeId==i?"●  Em utilização":"Tocar para aplicar",
+                12,scheme.muted,false);
+            status.setGravity(Gravity.CENTER);
+            add(choice,status,7);
+            choice.setOnClickListener(v->setTheme(index));
+            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
+            lp.width=0;
+            lp.height=dp(143);
+            lp.columnSpec=GridLayout.spec(i%cols,1f);
+            lp.rowSpec=GridLayout.spec(i/cols,1f);
+            lp.setMargins(dp(4),dp(5),dp(4),dp(5));
+            grid.addView(choice,lp);
+        }
+        add(stage,grid,13);
+        add(stage,button("Voltar à Home",true,()->{
+            page="Estação";draw();
+        }),12);
+    }
+
     private String versionName() {
         try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
         catch(Exception ignored){return "desconhecida";}

@@ -4,7 +4,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <queries>\n        <package android:name="com.spotify.music" />\n        <package android:name="com.mm.android.smartlifeiot" />\n    </queries>\n    <application
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <queries>
+        <package android:name="com.spotify.music" />
+        <package android:name="com.mm.android.smartlifeiot" />
+    </queries>
+    <application
         android:label="LUMI Hub"
         android:icon="@drawable/lumi_icon"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
@@ -19,6 +25,19 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".OfflineVoiceLabActivity"
+            android:exported="false" />
+        <activity android:name=".CameraRoomActivity"
+            android:exported="false" />
+        <receiver android:name=".ScreenLockAdmin"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin"
+                android:resource="@xml/lumi_screen_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".HubService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>

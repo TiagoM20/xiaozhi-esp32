@@ -26,6 +26,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.TextClock;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.net.HttpURLConnection;
@@ -58,6 +62,7 @@ public final class MainActivity extends Activity {
     private String activeDevice = "tv";
     private LinearLayout stage;
     private MemoryDb memories;
+    private static final int PICK_MEMORY_JSON = 9441;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -65,6 +70,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         memories = new MemoryDb(this);
+        seedStarterMemories();
         draw();
     }
     @Override protected void onResume() {
@@ -159,6 +165,57 @@ public final class MainActivity extends Activity {
         return getResources().getConfiguration().orientation
             == Configuration.ORIENTATION_LANDSCAPE;
     }
+    private void seedStarterMemories() {
+        SharedPreferences p = getSharedPreferences("hub", MODE_PRIVATE);
+        if (p.getBoolean("starter_memories_v7", false)) return;
+        // Nunca guardar dados privados do agregado no codigo publico.
+        memories.saveIfMissing("Idioma e estilo", "A LUMI deve conversar naturalmente em portugues de Portugal, com respostas claras e humanas.");
+        memories.saveIfMissing("Historias favoritas", "Gostamos de historias interativas com Sonic, Mario e Crash Bandicoot, escolhas e personagens recorrentes.");
+        memories.saveIfMissing("Privacidade", "A LUMI deve pedir autorizacao antes de guardar ou partilhar informacao pessoal sensivel.");
+        p.edit().putBoolean("starter_memories_v7", true).apply();
+    }
+
+    private void chooseMemoryFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+            new String[]{"application/json", "text/plain", "application/octet-stream"});
+        startActivityForResult(intent, PICK_MEMORY_JSON);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_MEMORY_JSON || resultCode != RESULT_OK || data == null) return;
+        try (InputStream input = getContentResolver().openInputStream(data.getData());
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            if (input == null) throw new Exception("Ficheiro inacessivel.");
+            byte[] buffer = new byte[4096];
+            int n;
+            while ((n = input.read(buffer)) > 0) {
+                if (out.size() + n > 128 * 1024) throw new Exception("Ficheiro demasiado grande.");
+                out.write(buffer, 0, n);
+            }
+            String json = new String(out.toByteArray(), StandardCharsets.UTF_8);
+            JSONArray entries = json.trim().startsWith("[")?
+                new JSONArray(json):new JSONObject(json).getJSONArray("memories");
+            if (entries.length() > 100) throw new Exception("Maximo de 100 memorias.");
+            int inserted = 0;
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject item = entries.optJSONObject(i);
+                if (item == null) continue;
+                String title = item.optString("title", "").trim();
+                String detail = item.optString("detail", "").trim();
+                if (title.isEmpty() || title.length() > 100 || detail.length() > 1500) continue;
+                if (memories.saveIfMissing(title, detail)) inserted++;
+            }
+            draw();
+            notice("Memorias importadas", inserted + " novas memorias guardadas no tablet. Ainda nao ligadas as conversas da LUMI DESK.");
+        } catch (Exception error) {
+            notice("Importacao de memorias", "Nao foi possivel importar: " + error.getMessage());
+        }
+    }
+
     private void draw() {
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
@@ -614,6 +671,7 @@ public final class MainActivity extends Activity {
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "
             +"partilhadas com o cérebro da LUMI DESK.",13,MUTED,false),8);
         add(c,button("+ Guardar memória",true,this::newMemory),13);
+        add(c,button("Importar memórias (ficheiro JSON)",false,this::chooseMemoryFile),8);
         add(stage,c,18);
         List<MemoryDb.Item> list=memories.all();
         if(list.isEmpty()) {

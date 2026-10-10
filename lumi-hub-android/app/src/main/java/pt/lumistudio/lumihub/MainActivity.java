@@ -63,6 +63,18 @@ public final class MainActivity extends Activity {
     private LinearLayout stage;
     private MemoryDb memories;
     private static final int PICK_MEMORY_JSON = 9441;
+    private final android.os.Handler weatherHandler =
+        new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable weatherTick = new Runnable() {
+        @Override public void run() {
+            if ("Estação".equals(page)) {
+                RebordosaWeather.refreshIfNeeded(MainActivity.this, () -> {
+                    if (!isFinishing() && "Estação".equals(page)) draw();
+                });
+            }
+            weatherHandler.postDelayed(this, 5L * 60L * 1000L);
+        }
+    };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -76,6 +88,12 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (stage != null) draw();
+        weatherHandler.removeCallbacks(weatherTick);
+        weatherHandler.postDelayed(weatherTick, 5L * 60L * 1000L);
+    }
+    @Override protected void onPause() {
+        weatherHandler.removeCallbacks(weatherTick);
+        super.onPause();
     }
     @Override protected void onDestroy() {
         if (memories != null) memories.close();
@@ -510,8 +528,10 @@ public final class MainActivity extends Activity {
         icon.setGravity(Gravity.CENTER);
         icon.setBackground(fill(Color.rgb(43,55,76),13));
         icon.setPadding(dp(7),dp(4),dp(7),dp(4));
-        addWeighted(upper,icon,1,0);
-        upper.addView(label("↗",18,MUTED,false));
+        upper.addView(icon, new LinearLayout.LayoutParams(dp(55),dp(47)));
+        TextView arrow=label("↗",18,MUTED,false);
+        arrow.setGravity(Gravity.RIGHT);
+        addWeighted(upper,arrow,1,9);
         tile.addView(upper);
         add(tile,label(name,16,WHITE,true),9);
         add(tile,label(detailText,12,MUTED,false),5);
@@ -588,7 +608,7 @@ public final class MainActivity extends Activity {
         add(c,label("LOCALIZAÇÃO EXTERNA  ·  GOOGLE FIND HUB",12,CYAN,true),8);
         add(c,label("Abre o localizador oficial da Google. Depois de iniciares sessão com uma conta autorizada, seleciona o telemóvel e usa «Reproduzir som». O Hub não obtém a localização nem faz tocar o equipamento diretamente.",13,MUTED,false),13);
         add(c,button("Localizar / fazer tocar (Google)",true,()->openFindHub(owner)),15);
-        add(c,label("Para o telemóvel do Leonardo, a conta e as permissões familiares têm de permitir encontrá-lo. Não é necessário guardar passwords no Hub.",12,MUTED,false),10);
+        if("Leonardo".equals(owner)) add(c,label("A conta e as permissões familiares têm de permitir encontrar o telemóvel do Leonardo. Não é necessário guardar passwords no Hub.",12,MUTED,false),10);
         add(stage,c,16);
     }
 

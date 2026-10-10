@@ -61,8 +61,11 @@ jobs:
             --output "LUMI-Raquel-PTPT-Demo.mp3"
           test -s LUMI-Raquel-PTPT-Demo.mp3
           file LUMI-Raquel-PTPT-Demo.mp3
-          ffprobe -v error -show_entries format=duration \
-            -of default=noprint_wrappers=1 LUMI-Raquel-PTPT-Demo.mp3
+          # ffprobe nao faz parte de todos os runners. Valida apenas quando existir.
+          if command -v ffprobe >/dev/null 2>&1; then
+            ffprobe -v error -show_entries format=duration \
+              -of default=noprint_wrappers=1 LUMI-Raquel-PTPT-Demo.mp3
+          fi
 
       - name: Guardar demonstracao PT-PT
         uses: actions/upload-artifact@v4

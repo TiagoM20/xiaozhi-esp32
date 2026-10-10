@@ -1141,6 +1141,7 @@ public final class MainActivity extends Activity {
         LinearLayout list=vertical();
         list.setId(17331);
         add(stage,list,12);
+        stage.post(this::loadReleases);
     }
 
     private void drawThemeSelector() {
@@ -1198,11 +1199,34 @@ public final class MainActivity extends Activity {
         try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
         catch(Exception ignored){return "desconhecida";}
     }
+    private int[] versionNumbers(String version) {
+        String cleaned=version.startsWith("lumi-hub-v")
+            ?version.substring("lumi-hub-v".length()):version;
+        String[] chunks=cleaned.split("[.]");
+        int[] parts=new int[]{0,0,0};
+        for(int i=0;i<Math.min(chunks.length,3);i++) {
+            try {
+                parts[i]=Integer.parseInt(chunks[i]);
+                if(parts[i]<0) return new int[]{-1,-1,-1};
+            } catch(NumberFormatException error) {return new int[]{-1,-1,-1};}
+        }
+        return parts;
+    }
+
+    private int compareVersions(String a,String b) {
+        int[] x=versionNumbers(a);
+        int[] y=versionNumbers(b);
+        for(int i=0;i<3;i++) {
+            if(x[i]!=y[i]) return Integer.compare(x[i],y[i]);
+        }
+        return 0;
+    }
+
     private void loadReleases() {
         LinearLayout holder=findViewById(17331);
         if(holder==null)return;
         holder.removeAllViews();
-        add(holder,label("A consultar o GitHub...",13,MUTED,false),10);
+        add(holder,label("A procurar versões Android...",13,MUTED,false),10);
         new Thread(()->{
             JSONArray releases=null;
             String problem=null;
@@ -1221,7 +1245,11 @@ public final class MainActivity extends Activity {
                     try(BufferedReader rd=new BufferedReader(
                         new InputStreamReader(con.getInputStream(),"UTF-8"))){
                         String line;
-                        while((line=rd.readLine())!=null)b.append(line);
+                        while((line=rd.readLine())!=null) {
+                            b.append(line);
+                            if(b.length()>512000)
+                                throw new Exception("Resposta excessivamente grande");
+                        }
                     }
                     releases=new JSONArray(b.toString());
                 }finally{con.disconnect();}
@@ -1229,40 +1257,87 @@ public final class MainActivity extends Activity {
             final JSONArray result=releases;
             final String error=problem;
             runOnUiThread(()->{
-                if(!"Atualizações".equals(page))return;
+                if(!"Atualizações".equals(page) || !"Versões".equals(updatesTab))return;
                 LinearLayout area=findViewById(17331);
                 if(area==null)return;
                 area.removeAllViews();
-                if(error!=null){add(area,label("Erro: "+error,14,GOLD,false),6);return;}
-                int shown=0;
-                for(int i=0;i<result.length();i++){
-                    JSONObject rel=result.optJSONObject(i);
-                    if(rel==null||rel.optBoolean("draft"))continue;
-                    String tag=rel.optString("tag_name","");
-                    if(!tag.startsWith("lumi-hub-v"))continue;
-                    String apkUrl="";
-                    JSONArray assets=rel.optJSONArray("assets");
-                    if(assets!=null)for(int j=0;j<assets.length();j++){
-                        JSONObject asset=assets.optJSONObject(j);
-                        if(asset!=null&&asset.optString("name","").endsWith(".apk")){
-                            apkUrl=asset.optString("browser_download_url","");
-                            break;
-                        }
-                    }
-                    LinearLayout tile=panel();
-                    tile.addView(label(rel.optString("name",tag),17,WHITE,true));
-                    add(tile,label(tag,12,CYAN,false),5);
-                    add(tile,label(rel.optString("body","Sem descrição"),12,MUTED,false),7);
-                    if(!apkUrl.isEmpty()){
-                        String link=apkUrl;
-                        add(tile,button("Descarregar APK",true,()->downloadApk(link,tag)),11);
-                    }
-                    add(area,tile,10);
-                    shown++;
+                if(error!=null){
+                    add(area,label("Não foi possível consultar as atualizações: "
+                        +error,13,GOLD,false),6);
+                    add(area,button("Tentar novamente",false,this::loadReleases),10);
+                    return;
                 }
-                if(shown==0)add(area,label("Sem versões Android publicadas.",14,MUTED,false),10);
+                if(result==null) return;
+                java.util.ArrayList<JSONObject> versions=new java.util.ArrayList<>();
+                for(int i=0;i<result.length();i++) {
+                    JSONObject release=result.optJSONObject(i);
+                    if(release==null || release.optBoolean("draft")
+                        || release.optBoolean("prerelease")) continue;
+                    String tag=release.optString("tag_name","");
+                    if(!tag.startsWith("lumi-hub-v"))continue;
+                    versions.add(release);
+                }
+                versions.sort((left,right)->compareVersions(
+                    right.optString("tag_name",""),left.optString("tag_name","")));
+                String installed=versionName();
+                if(!versions.isEmpty()){
+                    JSONObject latest=versions.get(0);
+                    String tag=latest.optString("tag_name","");
+                    int comparison=compareVersions(tag,installed);
+                    LinearLayout summary=panel();
+                    if(comparison>0){
+                        summary.addView(label("Nova atualização disponível",19,GREEN,true));
+                        add(summary,label("LUMI Hub "+tag.substring("lumi-hub-v".length())
+                            +" · instalada "+installed,14,WHITE,false),8);
+                        String link=releaseApkUrl(latest);
+                        if(!link.isEmpty()){
+                            add(summary,button("Descarregar atualização",true,
+                                ()->downloadApk(link,tag)),12);
+                        }else add(summary,label("O APK ainda não está disponível.",
+                            12,GOLD,false),8);
+                    }else{
+                        summary.addView(label("Aplicação atualizada",18,GREEN,true));
+                        add(summary,label("Versão instalada: "+installed,
+                            13,MUTED,false),7);
+                    }
+                    add(area,summary,8);
+                }
+                for(JSONObject rel:versions) {
+                    String tag=rel.optString("tag_name","");
+                    String link=releaseApkUrl(rel);
+                    LinearLayout tile=panel();
+                    String name=rel.optString("name",tag);
+                    tile.addView(label(name,16,WHITE,true));
+                    String marker=compareVersions(tag,installed)==0
+                        ?" · Instalada" : "";
+                    add(tile,label(tag+marker,12,CYAN,false),5);
+                    add(tile,label(rel.optString("body","Sem descrição"),
+                        12,MUTED,false),7);
+                    if(!link.isEmpty() && compareVersions(tag,installed)!=0)
+                        add(tile,button("Descarregar APK",false,
+                            ()->downloadApk(link,tag)),11);
+                    add(area,tile,10);
+                }
+                if(versions.isEmpty())
+                    add(area,label("Sem versões Android publicadas.",14,MUTED,false),10);
             });
         },"LumiHubReleases").start();
+    }
+
+    private String releaseApkUrl(JSONObject release) {
+        JSONArray assets=release.optJSONArray("assets");
+        if(assets==null)return "";
+        String tag=release.optString("tag_name","");
+        for(int j=0;j<assets.length();j++){
+            JSONObject asset=assets.optJSONObject(j);
+            if(asset==null)continue;
+            String name=asset.optString("name","");
+            String url=asset.optString("browser_download_url","");
+            if(name.endsWith(".apk")
+                && url.startsWith("https://github.com/TiagoM20/xiaozhi-esp32/releases/download/")
+                && url.contains("/"+tag+"/")) return url;
+        }
+        return "";
     }
     private void downloadApk(String link,String tag) {
         if(!link.startsWith("https://github.com/TiagoM20/xiaozhi-esp32/releases/download/")){

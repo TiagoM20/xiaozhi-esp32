@@ -347,70 +347,75 @@ public final class MainActivity extends Activity {
             .getString("lg_last_status","Por verificar");
     }
     private void drawStation() {
-        LinearLayout hero=vertical();
-        GradientDrawable gradient=new GradientDrawable(
+        LinearLayout top = horizontal();
+        LinearLayout headings = vertical();
+        headings.addView(label("LUMI  /  CASA INTELIGENTE",12,CYAN,true));
+        add(headings,label("Estação",27,WHITE,true),4);
+        add(headings,label(date("EEEE, d 'de' MMMM"),12,MUTED,false),4);
+        addWeighted(top,headings,1,0);
+        top.addView(label(serviceRunning()?"●  HUB ATIVO":"●  HUB PARADO",12,
+            serviceRunning()?GREEN:GOLD,true));
+        add(stage,top,3);
+
+        LinearLayout overview = horizontal();
+        LinearLayout clockPanel = panel();
+        GradientDrawable gradient = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(36,46,85),Color.rgb(28,51,70),Color.rgb(21,35,51)});
-        gradient.setCornerRadius(dp(26));
-        hero.setBackground(gradient);
-        hero.setPadding(dp(24),dp(23),dp(24),dp(26));
-        hero.addView(label("LUMI   /   ESTAÇÃO",13,CYAN,true));
-        Calendar now=Calendar.getInstance();
-        String greeting=now.get(Calendar.HOUR_OF_DAY)<12?"Bom dia":
-            now.get(Calendar.HOUR_OF_DAY)<19?"Boa tarde":"Boa noite";
-        add(hero,label(greeting,30,WHITE,true),11);
-        LinearLayout clock=horizontal();
-        TextView clockText=label(date("HH:mm"),landscape()?52:44,WHITE,true);
-        addWeighted(clock,clockText,1,0);
-        LinearLayout day=vertical();
-        day.addView(label(date("EEEE"),15,WHITE,true));
-        add(day,label(date("d 'de' MMMM"),13,MUTED,false),4);
-        clock.addView(day);
-        add(hero,clock,6);
-        add(hero,label("A tua casa, a LUMI DESK e os teus dispositivos num só lugar.",13,
-            Color.rgb(210,220,235),false),10);
-        add(stage,hero,1);
+            new int[]{Color.rgb(35,47,82),Color.rgb(24,36,61),Color.rgb(23,39,58)});
+        gradient.setCornerRadius(dp(20));
+        clockPanel.setBackground(gradient);
+        clockPanel.addView(label("AGORA EM CASA",12,CYAN,true));
+        TextClock clock = new TextClock(this);
+        clock.setFormat24Hour("HH:mm");
+        clock.setFormat12Hour("HH:mm");
+        clock.setTextSize(landscape()?47:39);
+        clock.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));
+        clock.setTextColor(WHITE);
+        add(clockPanel,clock,4);
+        add(clockPanel,label("Meteorologia por configurar",12,MUTED,false),4);
+        addWeighted(overview,clockPanel,1,0);
+        LinearLayout status=panel();
+        status.addView(label("CENTRAL DOMÉSTICA",12,VIOLET,true));
+        add(status,label("Tab 15  ·  "+battery()+"%",19,WHITE,true),8);
+        add(status,label(charging()?"Bateria a carregar":"A funcionar com bateria",
+            12,MUTED,false),3);
+        add(status,label("Voz XiaoZhi: "+mcpStatus(),12,
+            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),10);
+        add(status,button("Configurar voz",false,this::mcpSettings),10);
+        addWeighted(overview,status,1,10);
+        add(stage,overview,15);
 
-        LinearLayout status=horizontal();
-        status.setPadding(dp(13),dp(14),dp(13),dp(14));
-        status.setBackground(borderFill(PANEL,15,STROKE));
-        TextView s=label("●  "+serviceText(),14,serviceRunning()?GREEN:GOLD,true);
-        addWeighted(status,s,1,0);
-        TextView b=label("TAB 15  "+battery()+"%",14,CYAN,true);
-        status.addView(b);
-        add(stage,status,13);
-
-        sectionTitle("A tua casa","Acede rapidamente a cada dispositivo.");
+        sectionTitle("A tua casa","Seleciona um equipamento para o controlar.");
         GridLayout grid=new GridLayout(this);
-        int cols=landscape()?2:2;
+        int cols=landscape()?3:2;
         grid.setColumnCount(cols);
-        addTile(grid,0,cols,"TV da Sala","LG webOS • "+(savedIp().isEmpty()?
-            "Por configurar":"Emparelhada ou pronta para testar"),"TV",CYAN,"tv");
-        addTile(grid,1,cols,"LUMI DESK","Assistente • ligação direta pendente",
-            "AI",VIOLET,"lumi");
-        addTile(grid,2,cols,"Aspirador","Alfawise • por configurar","⌁",GOLD,"vacuum");
-        addTile(grid,3,cols,"Ar condicionado","Sala • por configurar","AC",GREEN,"ac");
-        add(stage,grid,12);
+        addTile(grid,0,cols,"TV da Sala",savedIp().isEmpty()?
+            "LG webOS · configurar":"LG webOS · pronta para testar","▣",CYAN,"tv");
+        addTile(grid,1,cols,"LUMI DESK","Assistente de voz · ESP32-S3","◈",VIOLET,"lumi");
+        addTile(grid,2,cols,"Tab 15","Central · "+battery()+"%","▤",GREEN,"tablet");
+        addTile(grid,3,cols,"Aspirador","Alfawise · por configurar","⌁",GOLD,"vacuum");
+        addTile(grid,4,cols,"Climatização","AC da Sala · por configurar","❄",CYAN,"ac");
+        addTile(grid,5,cols,"Tomada Wi-Fi","Ainda não instalada","+",MUTED,"plug");
+        add(stage,grid,11);
 
         LinearLayout quick=panel();
-        quick.addView(label("COMANDOS RÁPIDOS  ·  TV DA SALA",12,MUTED,true));
+        quick.addView(label("CONTROLOS RÁPIDOS   /   TV DA SALA",12,MUTED,true));
         LinearLayout commands=horizontal();
         addWeighted(commands,button("Volume +",false,
             ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
         addWeighted(commands,button("Volume −",false,
             ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
-        addWeighted(commands,button("YouTube",true,
+        addWeighted(commands,button("YouTube",false,
             ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
+        addWeighted(commands,button("Desligar",true,()->new AlertDialog.Builder(this)
+            .setTitle("Desligar TV da Sala?")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Desligar",(dialog,which)->
+                tvCommand("ssap://system/turnOff",false)).show()),1,7);
         add(quick,commands,12);
-        add(stage,quick,15);
-
-        LinearLayout hint=panel();
-        hint.addView(label("LUMI DESK · CONTROLO POR VOZ",14,WHITE,true));
-        add(hint,label("Os comandos à TV já funcionam a partir do tablet. Para dizeres "
-                +"«Olá Lumi, desliga a TV da Sala» falta ligar o servidor XiaoZhi "
-                +"ao Hub. Esse canal ainda não está ativo.",13,MUTED,false),8);
-        add(stage,hint,14);
+        add(stage,quick,14);
     }
+
     private void addTile(GridLayout grid,int index,int columns,String name,
                          String detailText,String symbol,int accent,String device) {
         LinearLayout tile=vertical();

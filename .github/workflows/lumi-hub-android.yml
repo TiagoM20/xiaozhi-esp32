@@ -94,7 +94,8 @@ jobs:
           make_latest: false
           body: |
             Aplicacao Android LUMI Hub, versao 0.7.0.
-            Painel mural, importacao local de memorias em JSON e ponte MCP para controlo de TV por voz.\n            A conexao MCP exige configuracao individual no tablet e testes de hardware.
+            Painel mural, importacao local de memorias em JSON e ponte MCP para controlo de TV por voz.
+            A conexao MCP exige configuracao individual no tablet e testes de hardware.
             APK assinado com a chave persistente LUMI Studio.
             A atualizacao de versoes de teste com outra chave pode exigir migracao.
           files: LUMI-Hub-v0.7.0.apk

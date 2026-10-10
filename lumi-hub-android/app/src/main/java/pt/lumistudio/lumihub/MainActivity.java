@@ -416,6 +416,60 @@ public final class MainActivity extends Activity {
         add(stage,quick,14);
     }
 
+    private String mcpStatus() {
+        return getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("mcp_state","Por configurar");
+    }
+
+    private void mcpSettings() {
+        SharedPreferences p = getSharedPreferences("hub",MODE_PRIVATE);
+        LinearLayout form = vertical();
+        form.setPadding(dp(18),dp(5),dp(18),dp(5));
+        form.addView(label("Na consola XiaoZhi, abre o agente da LUMI DESK e copia o endereço MCP (wss://api.xiaozhi.me/mcp/?token=...).",14,MUTED,false));
+        EditText entry = new EditText(this);
+        entry.setSingleLine(true);
+        entry.setHint(p.getString("mcp_endpoint","").isEmpty() ?
+            "Cola aqui o endereço MCP" : "Ligação configurada · cola aqui para substituir");
+        entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
+            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        add(form,entry,11);
+        add(form,label("O token fica no armazenamento privado do Tab 15. Não o publiques no GitHub.",12,MUTED,false),7);
+        new AlertDialog.Builder(this).setTitle("LUMI DESK · Voz e MCP")
+            .setView(form)
+            .setNeutralButton("Remover ligação",(dialog,which)->{
+                p.edit().remove("mcp_endpoint")
+                    .putString("mcp_state","Por configurar").apply();
+                restartMcpService();
+            })
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar",(dialog,which)->{
+                String url=entry.getText().toString().trim();
+                if(url.isEmpty())return;
+                if(!XiaozhiMcpBridge.validEndpoint(url)) {
+                    notice("Endereço MCP inválido",
+                        "Utiliza o endereço wss://api.xiaozhi.me/mcp/?token=... do teu agente.");
+                    return;
+                }
+                p.edit().putString("mcp_endpoint",url)
+                    .putString("mcp_state","A iniciar ligação").apply();
+                restartMcpService();
+            }).show();
+    }
+
+    private void restartMcpService() {
+        if(serviceRunning()) {
+            Intent service = new Intent(this,HubService.class);
+            stopService(service);
+            try {
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
+                else startService(service);
+            } catch(Exception error) {
+                notice("Serviço Android",error.getMessage());
+            }
+        }
+        draw();
+    }
+
     private void addTile(GridLayout grid,int index,int columns,String name,
                          String detailText,String symbol,int accent,String device) {
         LinearLayout tile=vertical();
@@ -673,6 +727,10 @@ public final class MainActivity extends Activity {
             g.addView(b,lp);
         }
         add(c,g,12);
+        add(c,label("COMANDOS POR VOZ · XIAOZHI MCP",12,VIOLET,true),16);
+        add(c,label("Estado: "+mcpStatus(),13,MUTED,false),6);
+        add(c,button("Configurar ligação de voz",true,this::mcpSettings),10);
+        add(c,label("O Hub partilha comandos da TV com o agente XiaoZhi por MCP. É necessário configurar o endereço MCP e manter a central ativa. A comunicação direta com os GIFs do ESP32 ainda está por implementar.",12,MUTED,false),10);
         add(c,button("Consultar diagnósticos e logs do Hub",false,this::diagnostics),14);
         add(c,label("Os logs internos do ESP32 e o controlo remoto dos GIFs só "
             +"ficarão disponíveis depois da integração da LUMI DESK.",12,MUTED,false),10);

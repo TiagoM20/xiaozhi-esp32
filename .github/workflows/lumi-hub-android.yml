@@ -95,7 +95,8 @@ jobs:
           body: |
             Aplicacao Android LUMI Hub, versao 0.8.0.
             Dashboard com tiles; meteorologia real de Rebordosa; camara varanda; localizador Google para telemoveis e acesso Spotify.
-            Funcionalidades externas abrem servicos oficiais; visualizacao interna da camara e toque direto dos telemoveis nao implementados.\n            A conexao MCP exige configuracao individual no tablet e testes de hardware.
+            Funcionalidades externas abrem servicos oficiais; visualizacao interna da camara e toque direto dos telemoveis nao implementados.
+            A conexao MCP exige configuracao individual no tablet e testes de hardware.
             APK assinado com a chave persistente LUMI Studio.
             A atualizacao de versoes de teste com outra chave pode exigir migracao.
           files: LUMI-Hub-v0.8.0.apk

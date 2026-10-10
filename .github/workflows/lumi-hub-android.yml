@@ -94,7 +94,9 @@ jobs:
           make_latest: false
           body: |
             Aplicacao Android LUMI Hub, versao 0.9.0.
-            Nova HOME inspirada nos paineis murais: relogio, meteorologia Rebordosa e grelha de botoes grandes.\n            Os 3 telemoveis, a camara, o aspirador, a TV, LUMI DESK e Tab 15 permanecem na HOME e em Dispositivos.\n            Inclui espaco para mais equipamentos; preserva Spotify, AC e tomada inteligente.
+            Nova HOME inspirada nos paineis murais: relogio, meteorologia Rebordosa e grelha de botoes grandes.
+            Os 3 telemoveis, a camara, o aspirador, a TV, LUMI DESK e Tab 15 permanecem na HOME e em Dispositivos.
+            Inclui espaco para mais equipamentos; preserva Spotify, AC e tomada inteligente.
             Funcionalidades externas abrem servicos oficiais; visualizacao interna da camara e toque direto dos telemoveis nao implementados.
             A conexao MCP exige configuracao individual no tablet e testes de hardware.
             APK assinado com a chave persistente LUMI Studio.

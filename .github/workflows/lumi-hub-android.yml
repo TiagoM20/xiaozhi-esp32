@@ -54,7 +54,7 @@ jobs:
       - name: Guardar APK do LUMI Hub
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-Hub-Android-Tab15-v0.8.0
+          name: LUMI-Hub-Android-Tab15-v0.9.0
           path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
@@ -82,21 +82,21 @@ jobs:
         if: env.LUMI_HAS_SIGNING == 'true'
         run: |
           test -s lumi-hub-android/app/build/outputs/apk/release/app-release.apk
-          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-Hub-v0.8.0.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs LUMI-Hub-v0.8.0.apk
+          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-Hub-v0.9.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs LUMI-Hub-v0.9.0.apk
 
       - name: Publicar versao Android no GitHub Releases
         if: env.LUMI_HAS_SIGNING == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.8.0
-          name: LUMI Hub 0.8.0 - Smart Home meteorologia, camera e telemoveis
+          tag_name: lumi-hub-v0.9.0
+          name: LUMI Hub 0.9.0 - HOME painel mural e dispositivos
           make_latest: false
           body: |
-            Aplicacao Android LUMI Hub, versao 0.8.0.
-            Dashboard com tiles; meteorologia real de Rebordosa; camara varanda; localizador Google para telemoveis e acesso Spotify.
+            Aplicacao Android LUMI Hub, versao 0.9.0.
+            Nova HOME inspirada nos paineis murais: relogio, meteorologia Rebordosa e grelha de botoes grandes.\n            Os 3 telemoveis, a camara, o aspirador, a TV, LUMI DESK e Tab 15 permanecem na HOME e em Dispositivos.\n            Inclui espaco para mais equipamentos; preserva Spotify, AC e tomada inteligente.
             Funcionalidades externas abrem servicos oficiais; visualizacao interna da camara e toque direto dos telemoveis nao implementados.
             A conexao MCP exige configuracao individual no tablet e testes de hardware.
             APK assinado com a chave persistente LUMI Studio.
             A atualizacao de versoes de teste com outra chave pode exigir migracao.
-          files: LUMI-Hub-v0.8.0.apk
+          files: LUMI-Hub-v0.9.0.apk

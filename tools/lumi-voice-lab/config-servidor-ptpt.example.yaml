@@ -1,0 +1,26 @@
+# EXEMPLO APENAS PARA UMA INSTANCIA PROPRIA de xinnan-tech/xiaozhi-esp32-server
+# Nao funciona no painel publico xiaozhi.me.
+# O servidor deve ter as restantes definicoes ASR, LLM, rede e autenticacao.
+# Guardar a configuracao REAL no servidor; NUNCA enviar credenciais ao GitHub.
+#
+# Nota: o codigo atual do servidor tem EdgeTTS configuravel, nao Azure Speech.
+# EdgeTTS e nao oficial e pode falhar ou ficar indisponivel.
+selected_module:
+  TTS: EdgeTTS
+  # A escolha do ASR tambem e essencial. SenseVoiceSmall por defeito nao
+  # suporta portugues. Exemplo com reconhecedor multilingue:
+  ASR: OpenaiASR
+TTS:
+  EdgeTTS:
+    type: edge
+    voice: pt-PT-RaquelNeural
+    output_dir: tmp/
+ASR:
+  OpenaiASR:
+    type: openai
+    # Apenas para demonstrar a estrutura. Antes de iniciar o servidor:
+    # preencher num ficheiro privado de configuracao com chave autorizada.
+    api_key: COLOCAR_CHAVE_PRIVADA_NO_SERVIDOR
+    base_url: https://api.openai.com/v1/audio/transcriptions
+    model_name: gpt-4o-mini-transcribe
+    output_dir: tmp/

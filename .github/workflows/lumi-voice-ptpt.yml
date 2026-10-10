@@ -1,0 +1,86 @@
+name: LUMI DESK - Teste voz PT-PT Raquel
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Motor de teste: Edge (sem credenciais) ou Azure (segredos necessários)"
+        required: true
+        default: edge
+        type: choice
+        options:
+          - edge
+          - azure
+      voice:
+        description: "Voz PT-PT"
+        required: true
+        default: pt-PT-RaquelNeural
+        type: choice
+        options:
+          - pt-PT-RaquelNeural
+          - pt-PT-FernandaNeural
+  push:
+    branches: [main]
+    paths:
+      - 'tools/lumi-voice-lab/**'
+      - '.github/workflows/lumi-voice-ptpt.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-ptpt-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Obter codigo
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Testar construcao SSML e API Azure sem rede
+        run: python -m unittest discover -v -s tools/lumi-voice-lab -p 'test_*.py'
+
+      - name: Preparar EdgeTTS para demonstracao
+        if: github.event_name != 'workflow_dispatch' || inputs.provider == 'edge'
+        run: python -m pip install "edge-tts>=7.0,<8.0"
+
+      - name: Gerar voz de teste (nao altera ESP32)
+        env:
+          SPEECH_KEY: ${{ secrets.LUMI_AZURE_SPEECH_KEY }}
+          SPEECH_REGION: ${{ secrets.LUMI_AZURE_SPEECH_REGION }}
+          VOICE_PROVIDER: ${{ inputs.provider || 'edge' }}
+          VOICE_NAME: ${{ inputs.voice || 'pt-PT-RaquelNeural' }}
+        run: |
+          python tools/lumi-voice-lab/voice_test.py \
+            --provider "$VOICE_PROVIDER" \
+            --voice "$VOICE_NAME" \
+            --output "LUMI-Raquel-PTPT-Demo.mp3"
+          test -s LUMI-Raquel-PTPT-Demo.mp3
+          file LUMI-Raquel-PTPT-Demo.mp3
+          ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1 LUMI-Raquel-PTPT-Demo.mp3
+
+      - name: Guardar demonstracao PT-PT
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-Raquel-PTPT-Demo
+          path: LUMI-Raquel-PTPT-Demo.mp3
+          retention-days: 30
+
+      - name: Publicar demo de voz para escuta
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-voice-ptpt-demo-v0.1
+          name: LUMI DESK - Demonstracao Raquel PT-PT
+          make_latest: false
+          body: |
+            Demonstracao isolada da voz portuguesa de Portugal Raquel Neural.
+            Audio criado via EdgeTTS para avaliacao; nao e firmware.
+            Nao modifica LUMI DESK nem o servidor publico XiaoZhi.
+            A implementacao definitiva exige um backend TTS controlado.
+          files: LUMI-Raquel-PTPT-Demo.mp3

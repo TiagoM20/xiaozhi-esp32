@@ -16,6 +16,7 @@ import android.os.IBinder;
 public final class HubService extends Service {
     private static final String CHANNEL = "lumi_hub_service";
     private BroadcastReceiver batteryReceiver;
+    private XiaozhiMcpBridge mcpBridge;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -53,6 +54,8 @@ public final class HubService extends Service {
         };
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", true).apply();
+        mcpBridge = new XiaozhiMcpBridge(this);
+        mcpBridge.start();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -60,6 +63,7 @@ public final class HubService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (mcpBridge != null) mcpBridge.stop();
         if (batteryReceiver != null) unregisterReceiver(batteryReceiver);
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", false).apply();
         super.onDestroy();

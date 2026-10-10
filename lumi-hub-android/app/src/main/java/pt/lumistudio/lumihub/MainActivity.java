@@ -238,25 +238,52 @@ public final class MainActivity extends Activity {
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
-        LinearLayout workspace = horizontal();
-        workspace.setGravity(Gravity.TOP);
-        root.addView(workspace, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        if (landscape()) addSidebar(workspace);
+
+        // Modo mural: navbar estreita em cima, a largura total para os tiles.
+        if (landscape()) topNavigation(root);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        workspace.addView(scroll, new LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        scroll.setVerticalScrollBarEnabled(false);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         stage = vertical();
-        stage.setPadding(dp(landscape()?18:16), dp(landscape()?13:16),
-            dp(landscape()?18:16), dp(24));
+        stage.setPadding(dp(landscape()?17:14), dp(landscape()?12:13),
+            dp(landscape()?17:14), dp(20));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Memórias".equals(page)) drawMemories();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
         if (!landscape()) bottomNavigation(root);
+    }
+
+    private void topNavigation(LinearLayout root) {
+        LinearLayout bar=horizontal();
+        bar.setPadding(dp(18),dp(7),dp(15),dp(7));
+        bar.setBackgroundColor(Color.rgb(13,27,53));
+        TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        brand.setOnClickListener(v->{page="Estação";draw();});
+        addWeighted(bar,brand,1,0);
+        for(String name:navItems) {
+            final String target=name;
+            boolean active=name.equals(page);
+            TextView tab=label("Estação".equals(name)?"Home":name,12,
+                active?WHITE:MUTED,active);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(12),dp(11),dp(12),dp(11));
+            tab.setBackground(fill(active?Color.rgb(43,81,146):
+                Color.rgb(13,27,53),9));
+            tab.setOnClickListener(v->{page=target;draw();});
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,dp(44));
+            lp.leftMargin=dp(5);
+            bar.addView(tab,lp);
+        }
+        root.addView(bar, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
 
     private void addSidebar(LinearLayout workspace) {

@@ -50,3 +50,17 @@ A utilizadora prefere `pt-PT-RaquelNeural` ou `pt-pt-x-sfs-network` (soa mais na
 ## Limites da investigação
 
 Os sintomas foram descritos pelo utilizador; **não houve medição física, recolha de logs de série nem teste de áudio no dispositivo**. Os arquivos GitHub podem diferir da imagem atual flashada na Waveshare. Nenhuma correção foi validada ainda no hardware.
+
+## Comparação objetiva dos dois vídeos do utilizador (11/10/2026)
+
+Dois ficheiros de filmagens consecutivas **mantidos fora do GitHub**: `1.mp4` (66,65 s) e `2.mp4` (74,08 s). Ambos incluem gravação da LUMI DESK feita com telemóvel em condições aparentemente próximas, com períodos em que o LCD indica `A falar...`. A imagem visível confirma que o estado de fala pode manter-se enquanto o nível de áudio captado baixa.
+
+Análise offline da pista AAC, convertida para mono PCM a 16 kHz. Na mesma janela temporal **38–65 s** dos dois vídeos e com janelas RMS de 20 ms e limiar de **−45 dBFS**, foram encontrados:
+- `1.mp4`: **13** intervalos com RMS abaixo do limiar durante pelo menos 0,2 s; aproximadamente **5,6 s** acumulados desses intervalos; 62,8% dos frames acima do limiar.
+- `2.mp4`: **18** intervalos com RMS abaixo do limiar durante pelo menos 0,2 s; aproximadamente **7,2 s** acumulados; 49,8% acima do limiar. Existem intervalos de 0,82–0,84 s em 48,80–49,64 s e 55,52–56,34 s, enquanto no vídeo a interface assinala `A falar...`.
+
+**Limitação metodológica:** estes são números sobre intensidade gravada pelo telemóvel, não sobre a disponibilidade de pacotes Opus, nem uma classificação garantida de pausas anómalas. O nível varia com posição, distância, ganho de captação, intensidade da voz e conteúdo de cada resposta. São indicadores coerentes com relato de gaguez intermitente, **não prova de falha da rede**.
+
+**Conclusão de trabalho:** a variabilidade entre gravações consecutivas torna insuficiente atribuir toda a falha à baixa qualidade da coluna/vibração de caixa. Não excluir hardware, mas priorizar rastreabilidade do percurso **WebSocket → callback de voz → estado de fala → fila → descodificação Opus → escrita I2S/ES8311**. A perda de pacotes ao encher fila é possibilidade concreta no código, ainda não observada em logs do dispositivo.
+
+**Não fazer nesta fase:** mudanças cegas de prioridades FreeRTOS, volume de amplificador, filtragem/equalização ou migração TTS. Primeiro adicionar telemetria agregada, testar sons embutidos vs TTS e recolher um log de série durante uma reprodução boa e uma má. Preservar os binários/NVS/recursos existentes.

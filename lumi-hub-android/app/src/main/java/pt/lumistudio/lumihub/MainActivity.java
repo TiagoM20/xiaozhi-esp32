@@ -65,6 +65,7 @@ public final class MainActivity extends Activity {
     private String page = "Estação";
     private String activeDevice = "tv";
     private LinearLayout stage;
+    private TextView tvFeedback;
     private HubThemes.Palette currentPalette=HubThemes.get(0);
     private int themeId=0;
     private String updatesTab="Versões";
@@ -274,6 +275,7 @@ public final class MainActivity extends Activity {
 
     private void draw() {
         applyTheme();
+        tvFeedback=null;
         LinearLayout root = vertical();
         root.setBackgroundColor(BG);
         setContentView(root);
@@ -537,12 +539,11 @@ public final class MainActivity extends Activity {
             ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
         addWeighted(buttons,button("YouTube",false,
             ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
-        addWeighted(buttons,button("Desligar",false,()->new AlertDialog.Builder(this)
-            .setTitle("Desligar TV da Sala?")
-            .setNegativeButton("Cancelar",null)
-            .setPositiveButton("Desligar",(dialog,which)->
-                tvCommand("ssap://system/turnOff",false)).show()),1,7);
+        addWeighted(buttons,button("Desligar",false,
+            ()->tvCommand("ssap://system/turnOff",false)),1,7);
         add(controls,buttons,12);
+        tvFeedback=label("TV da Sala · " + lastTv(),12,MUTED,false);
+        add(controls,tvFeedback,7);
         add(stage,controls,15);
     }
 
@@ -864,13 +865,11 @@ public final class MainActivity extends Activity {
         add(card,media,8);
         LinearLayout power=horizontal();
         addWeighted(power,button("Ligar TV  ·  WOL",true,this::tvWake),1,0);
-        addWeighted(power,button("Desligar TV",false,()->new AlertDialog.Builder(this)
-            .setTitle("Desligar TV da Sala?")
-            .setMessage("Enviar comando de desligar à LG?")
-            .setNegativeButton("Cancelar",null)
-            .setPositiveButton("Desligar",(d,w)->
-                tvCommand("ssap://system/turnOff",false)).show()),1,8);
+        addWeighted(power,button("Desligar TV",false,
+            ()->tvCommand("ssap://system/turnOff",false)),1,8);
         add(card,power,9);
+        tvFeedback=label("Última resposta LG: "+lastTv(),13,MUTED,false);
+        add(card,tvFeedback,12);
         add(card,label("Para ligar por Wake-on-LAN, indica o MAC da TV e ativa a opção "
             +"de ligar pela rede nas definições da LG. O envio não garante que a TV acorde.",12,MUTED,false),13);
         add(stage,card,16);
@@ -923,32 +922,37 @@ public final class MainActivity extends Activity {
     private boolean validMac(String mac) {
         return mac.matches("(?i)^[0-9a-f]{2}(:[0-9a-f]{2}){5}$");
     }
+    private void tvStatus(String message) {
+        if(tvFeedback!=null && tvFeedback.isAttachedToWindow())
+            tvFeedback.setText("TV da Sala · "+message);
+        Toast.makeText(this,message,Toast.LENGTH_SHORT).show();
+    }
     private void tvWake() {
         SharedPreferences p=getSharedPreferences("hub",MODE_PRIVATE);
         String mac=p.getString("tv_mac","");
         if(!validMac(mac)){
-            notice("Configurar MAC","Guarda primeiro o endereço MAC da TV da Sala nas definições do dispositivo.");
+            tvStatus("MAC da TV em falta. Configura-o nas definições da TV da Sala.");
             return;
         }
-        WakeOnLan.send(mac,p.getString("tv_ip",""),message->
-            runOnUiThread(()->notice("Ligar TV • Wake-on-LAN",message)));
+        tvStatus("A enviar o sinal de ligar...");
+        WakeOnLan.send(mac,p.getString("tv_ip",""),
+            message->runOnUiThread(()->tvStatus(message)));
     }
     private void tvCheck() {
         String ip=savedIp();
         if(!validIpv4(ip)){tvSettings();return;}
-        Toast.makeText(this,"A verificar serviço webOS...",Toast.LENGTH_SHORT).show();
+        tvStatus("A verificar ligação webOS...");
         new Thread(()->{
             boolean reachable=false;
             try(Socket s=new Socket()){
                 s.connect(new InetSocketAddress(ip,3001),2000);
                 reachable=true;
             }catch(Exception ignored){}
-            final boolean ok=reachable;
-            String msg=ok?"Serviço webOS acessível pela rede.":"Serviço não acessível agora. "
-                +"A TV pode estar desligada ou a rede indisponível.";
+            String msg=reachable?"Serviço webOS acessível.":
+                "Serviço webOS não acessível. TV desligada ou sem rede.";
             getSharedPreferences("hub",MODE_PRIVATE).edit()
                 .putString("lg_last_status",msg).apply();
-            runOnUiThread(()->notice("TV da Sala • Diagnóstico",msg));
+            runOnUiThread(()->tvStatus(msg));
         },"LumiTvCheck").start();
     }
     private void tvCommand(String action,boolean pair) {
@@ -961,7 +965,7 @@ public final class MainActivity extends Activity {
             WebOsController.inspectCertificate(ip,(fingerprint,error)->{
                 runOnUiThread(()->{
                     if(error!=null){
-                        notice("Certificado LG", "Falha WSS 3001: "+error);
+                        tvStatus("Falha WSS 3001: "+error);
                         return;
                     }
                     new AlertDialog.Builder(this).setTitle("Confiar na TV da Sala?")
@@ -978,8 +982,8 @@ public final class MainActivity extends Activity {
     }
     private void tvCommandDirect(String ip,String action,boolean pair) {
         SharedPreferences p=getSharedPreferences("hub",MODE_PRIVATE);
-        Toast.makeText(this,pair?"Aceita o emparelhamento na LG...":
-            "A enviar comando à TV da Sala...",Toast.LENGTH_SHORT).show();
+        tvStatus(pair?"Aceita o emparelhamento na TV...":
+            "A enviar comando...");
         WebOsController.request(ip,p.getString("lg_client_key",""),
             p.getString("lg_cert_pin",""),action,pair,(message,key)->
                 runOnUiThread(()->{
@@ -987,52 +991,36 @@ public final class MainActivity extends Activity {
                         .putString("lg_last_status",message);
                     if(key!=null&&!key.isEmpty())editor.putString("lg_client_key",key);
                     editor.apply();
-                    notice("TV da Sala",message);
+                    tvStatus(message);
                 }));
     }
     private void lumiDetails() {
         LinearLayout c=detail();
         c.addView(label("LUMI DESK",23,WHITE,true));
-        add(c,label("ESP32-S3 • Assistente de secretária",13,VIOLET,true),7);
-        add(c,label("Estado: não verificado — a ligação direta entre o ESP32 e o tablet "
-            +"ainda não existe.",13,MUTED,false),10);
-        add(c,label("EXPRESSÕES",12,MUTED,true),18);
-        GridLayout g=new GridLayout(this);
-        g.setColumnCount(3);
-        String[] icons={"☺","♥","☾","!","★","◡"};
-        String[] moods={"Feliz","Amor","Sonolenta","Surpresa","Confiante","Triste"};
-        for(int i=0;i<moods.length;i++){
-            final String mood=moods[i];
-            LinearLayout b=vertical();
-            b.setGravity(Gravity.CENTER);
-            b.setPadding(dp(7),dp(13),dp(7),dp(13));
-            b.setBackground(borderFill(PANEL_BRIGHT,13,STROKE));
-            TextView symbol=label(icons[i],22,CYAN,true);
-            symbol.setGravity(Gravity.CENTER);
-            b.addView(symbol);
-            TextView name=label(mood,12,WHITE,true);
-            name.setGravity(Gravity.CENTER);
-            b.addView(name);
-            b.setOnClickListener(v->notice(mood,"Pré-visualização apenas. "
-                +"O firmware da LUMI DESK ainda precisa de um canal de comandos "
-                +"para mudar os GIFs remotamente."));
-            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
-            lp.columnSpec=GridLayout.spec(i%3,1f);
-            lp.rowSpec=GridLayout.spec(i/3,1f);
-            lp.width=0;
-            lp.setMargins(dp(3),dp(3),dp(3),dp(3));
-            g.addView(b,lp);
-        }
-        add(c,g,12);
-        add(c,label("COMANDOS POR VOZ · XIAOZHI MCP",12,VIOLET,true),16);
-        add(c,label("Estado: "+mcpStatus(),13,MUTED,false),6);
-        add(c,button("Configurar ligação de voz",true,this::mcpSettings),10);
-        add(c,button("Testar voz PT-PT offline no Tab 15",false,()->
-            startActivity(new Intent(this,OfflineVoiceLabActivity.class))),9);
-        add(c,label("O Hub partilha comandos da TV com o agente XiaoZhi por MCP. É necessário configurar o endereço MCP e manter a central ativa. A comunicação direta com os GIFs do ESP32 ainda está por implementar.",12,MUTED,false),10);
-        add(c,button("Consultar diagnósticos e logs do Hub",false,this::diagnostics),14);
-        add(c,label("Os logs internos do ESP32 e o controlo remoto dos GIFs só "
-            +"ficarão disponíveis depois da integração da LUMI DESK.",12,MUTED,false),10);
+        add(c,label("ESP32-S3 · Assistente de voz da casa",13,VIOLET,true),6);
+        add(c,label("Ligações de voz e comandos",12,MUTED,true),15);
+        add(c,label("Ligação MCP: "+mcpStatus(),14,
+            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),7);
+        add(c,label("O MCP permite à DESK pedir comandos ao Hub. Ainda não cria " +
+            "um canal para o tablet mandar a DESK falar ou tocar.",12,MUTED,false),7);
+
+        add(c,label("LUMI NO TAB 15",14,CYAN,true),19);
+        add(c,label("Versão local com microfone e texto: comandos reais " +
+            "da TV, Spotify, meteorologia, bateria e Google Find. " +
+            "A conversa livre continua no serviço XiaoZhi.",13,MUTED,false),7);
+        add(c,button("Abrir LUMI no tablet",true,()->
+            startActivity(new Intent(this,LumiTabletActivity.class))),11);
+        add(c,button("Escolher e ouvir voz PT-PT",false,()->
+            startActivity(new Intent(this,OfflineVoiceLabActivity.class))),8);
+
+        add(c,label("ENCONTRAR A LUMI DESK",14,VIOLET,true),19);
+        add(c,label("A resposta sonora «Olá, estou aqui» no ESP32 " +
+            "ainda não está disponível: necessita de um canal de comandos " +
+            "para o dispositivo físico, diferente do MCP usado para a TV. " +
+            "Não vou colocar um botão que finja reproduzir áudio.",13,MUTED,false),7);
+
+        add(c,button("Configurar MCP da LUMI DESK",false,this::mcpSettings),16);
+        add(c,button("Diagnóstico do Hub",false,this::diagnostics),8);
         add(stage,c,16);
     }
     private void diagnostics() {

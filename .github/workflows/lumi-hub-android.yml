@@ -54,7 +54,7 @@ jobs:
       - name: Guardar APK do LUMI Hub
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-Hub-Android-Tab15-v0.10.1
+          name: LUMI-Hub-Android-Tab15-v0.11.0
           path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
@@ -82,19 +82,21 @@ jobs:
         if: env.LUMI_HAS_SIGNING == 'true'
         run: |
           test -s lumi-hub-android/app/build/outputs/apk/release/app-release.apk
-          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-Hub-v0.10.1.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs LUMI-Hub-v0.10.1.apk
+          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-Hub-v0.11.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs LUMI-Hub-v0.11.0.apk
 
       - name: Publicar versao Android no GitHub Releases
         if: env.LUMI_HAS_SIGNING == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.10.1
-          name: LUMI Hub 0.10.1 - Atualizacoes automaticas na app
+          tag_name: lumi-hub-v0.11.0
+          name: LUMI Hub 0.11.0 - TV silenciosa e LUMI no tablet
           make_latest: false
           body: |
-            Aplicacao Android LUMI Hub, versao 0.10.1.
-            Deteta novas versoes automaticamente ao abrir Atualizacoes, ordena semanticamente e destaca a ultima versao.
+            Aplicacao Android LUMI Hub, versao 0.11.0.
+            Correcoes: TV LG sem dialogo modal por comando; feedback inline e breve.
+            Painel LUMI DESK redesenhado: remove caras simuladas, adiciona LUMI local no tablet, selecao de vozes PT-PT e diagnosticos.
+            Voz escolhida manualmente; sistema Android nao disponibiliza genero fidedigno para selecionar automaticamente voz feminina.
             Mantem HOME mural e meteorologia Rebordosa.
             Inclui 5 temas alteraveis em Atualizacoes, camara Sala com visualizacao local por permissao e botao para apagar ecrã com administrador opcional.
             Inclui teste de disponibilidade de voz offline PT-PT no tablet e conserva todos os equipamentos.
@@ -104,4 +106,4 @@ jobs:
             A conexao MCP exige configuracao individual no tablet e testes de hardware.
             APK assinado com a chave persistente LUMI Studio.
             A atualizacao de versoes de teste com outra chave pode exigir migracao.
-          files: LUMI-Hub-v0.10.1.apk
+          files: LUMI-Hub-v0.11.0.apk

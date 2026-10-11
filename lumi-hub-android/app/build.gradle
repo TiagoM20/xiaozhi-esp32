@@ -14,8 +14,8 @@ android {
         applicationId 'pt.lumistudio.lumihub'
         minSdk 26
         targetSdk 32
-        versionCode 12
-        versionName '0.10.1'
+        versionCode 13
+        versionName '0.11.0'
     }
 
     buildTypes {

@@ -277,6 +277,11 @@ void Application::Run() {
 
         if (bits & MAIN_EVENT_CLOCK_TICK) {
             clock_ticks_++;
+            // Diagnostic-only: print a compact snapshot every five seconds
+            // of speech; never log raw audio, text, tokens or URLs.
+            if (GetDeviceState() == kDeviceStateSpeaking && clock_ticks_ % 5 == 0) {
+                audio_service_.LogAudioDiagnostics("speaking_5s");
+            }
 
             // LUMI: after 15 seconds without speech, end the conversation.
             // Never count while output is pending or microphone processing
@@ -585,6 +590,8 @@ void Application::InitializeProtocol() {
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
         if (GetDeviceState() == kDeviceStateSpeaking) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
+        } else {
+            audio_service_.NoteAudioPacketIgnoredByState();
         }
     });
 
@@ -659,6 +666,7 @@ void Application::InitializeProtocol() {
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
+                    audio_service_.LogAudioDiagnostics("tts_stop");
                     if (GetDeviceState() == kDeviceStateSpeaking) {
                         if (listening_mode_ == kListeningModeManualStop) {
                             SetDeviceState(kDeviceStateIdle);

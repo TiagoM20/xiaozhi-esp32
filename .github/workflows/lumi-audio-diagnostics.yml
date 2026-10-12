@@ -1,0 +1,113 @@
+name: LUMI DESK - Audio Diagnostics (experimental)
+
+on:
+  push:
+    branches:
+      - diagnostics/lumi-audio-v1-20261012
+    paths:
+      - '.github/workflows/lumi-audio-diagnostics.yml'
+      - 'main/application.cc'
+      - 'main/audio/audio_service.cc'
+      - 'main/audio/audio_service.h'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-only:
+    name: Compile diagnostic app - no flashing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure same LUMI options as existing build
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          config=json.loads(p.read_text(encoding="utf-8"))
+          opts=config["builds"][0]["sdkconfig_append"]
+          changes={
+              "CONFIG_USE_DEVICE_AEC":"n",
+              "CONFIG_USE_SERVER_AEC":"n",
+              "CONFIG_WAKE_WORD_DISABLED":"n",
+              "CONFIG_USE_ESP_WAKE_WORD":"n",
+              "CONFIG_USE_AFE_WAKE_WORD":"n",
+              "CONFIG_USE_CUSTOM_WAKE_WORD":"y",
+              "CONFIG_CUSTOM_WAKE_WORD":'"ola lumi"',
+              "CONFIG_CUSTOM_WAKE_WORD_DISPLAY":'"Olá Lumi"',
+              "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD":"20",
+              "CONFIG_SEND_WAKE_WORD_DATA":"y",
+              "CONFIG_SR_MN_CN_NONE":"y",
+              "CONFIG_SR_MN_EN_MULTINET6_QUANT":"y",
+          }
+          opts=[o for o in opts if o.split("=",1)[0] not in changes]
+          opts.extend(f"{k}={v}" for k,v in changes.items())
+          config["builds"][0]["sdkconfig_append"]=opts
+          p.write_text(json.dumps(config,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+          PY
+
+      - name: Validate diagnostic hooks and LUMI guards
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("main/application.cc").read_text()
+          audio=Path("main/audio/audio_service.cc").read_text()
+          h=Path("main/audio/audio_service.h").read_text()
+          assert 'LogAudioDiagnostics("tts_stop")' in app
+          assert 'LogAudioDiagnostics("speaking_5s")' in app
+          assert "NoteAudioPacketIgnoredByState" in app
+          for key in ["diag_drop_queue_", "diag_decode_error_", "diag_output_gap_", "diag_slow_write_"]:
+              assert key in audio and key in h
+          assert 'audio_service_.EnableWakeWordDetection(false);' in app
+          assert '15000000' in app
+          assert 'MAX_DECODE_PACKETS_IN_QUEUE (1200 / OPUS_FRAME_DURATION_MS)' in h
+          assert 'MAX_PLAYBACK_TASKS_IN_QUEUE 2' in h
+          print("Hooks present, playback queue limits unchanged")
+          PY
+
+      - name: Compile Waveshare 1.54 diagnostic firmware
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 \
+            --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          grep -qx 'CONFIG_USE_CUSTOM_WAKE_WORD=y' sdkconfig
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          grep -qx '# CONFIG_USE_DEVICE_AEC is not set' sdkconfig
+          test -s build/xiaozhi.bin
+          echo "Compiled only. Nothing was sent to the hardware."
+
+      - name: Create reproducible diagnostic notes
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "LUMI DESK AUDIO DIAGNOSTICS - EXPERIMENTAL" \
+            "Target: Waveshare ESP32-S3-Touch-LCD-1.54" \
+            "Only audio log counters were added; audio stream unchanged." \
+            "DO NOT flash without a verified full backup and rollback plan." \
+            "The app binary is at build/xiaozhi.bin (OTA app partition only)." \
+            "DO NOT erase flash, NVS or assets." \
+            "See docs/lumi-desk-audio-diagnostico-2026-10.md" \
+            > LUMI-DIAG-README.txt
+          sha256sum build/xiaozhi.bin > LUMI-DIAG-sha256.txt
+
+      - name: Store artifacts, no public release or OTA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-DESK-AUDIO-DIAGNOSTIC-TEST-NOT-INSTALLED
+          path: |
+            build/xiaozhi.bin
+            sdkconfig
+            LUMI-DIAG-README.txt
+            LUMI-DIAG-sha256.txt
+          if-no-files-found: error
+          retention-days: 14

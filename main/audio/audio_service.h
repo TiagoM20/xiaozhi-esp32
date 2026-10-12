@@ -142,6 +142,10 @@ public:
     void SetCallbacks(AudioServiceCallbacks& callbacks);
 
     bool PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> packet, bool wait = false);
+    // LUMI diagnostic-only: count packets ignored while UI is not speaking.
+    void NoteAudioPacketIgnoredByState();
+    // Aggregated counters; never log payload, transcripts or credentials.
+    void LogAudioDiagnostics(const char* reason);
     std::unique_ptr<AudioStreamPacket> PopPacketFromSendQueue();
     void PlaySound(const std::string_view& sound);
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
@@ -169,6 +173,19 @@ private:
     int decoder_duration_ms_ = OPUS_FRAME_DURATION_MS;
     int decoder_frame_size_ = 0;
     DebugStatistics debug_statistics_;
+    // Lock-free, low-overhead counters for the diagnostic firmware only.
+    std::atomic<uint32_t> diag_accepted_{0};
+    std::atomic<uint32_t> diag_drop_state_{0};
+    std::atomic<uint32_t> diag_drop_queue_{0};
+    std::atomic<uint32_t> diag_drop_reset_{0};
+    std::atomic<uint32_t> diag_decoded_{0};
+    std::atomic<uint32_t> diag_decode_error_{0};
+    std::atomic<uint32_t> diag_played_{0};
+    std::atomic<uint32_t> diag_output_gap_{0};
+    std::atomic<uint32_t> diag_max_gap_ms_{0};
+    std::atomic<uint32_t> diag_slow_write_{0};
+    // Only read/written on the audio-output task (not cross-task).
+    int64_t diag_last_output_end_us_ = 0;
     int64_t last_encode_drop_log_time_ = 0;
     srmodel_list_t* models_list_ = nullptr;
 

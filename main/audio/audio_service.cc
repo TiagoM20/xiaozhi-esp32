@@ -348,7 +348,28 @@ void AudioService::AudioOutputTask() {
             callbacks_.on_playback_progress(task.playback_id, task.media_position_ms);
         }
 
+        // Diagnostic timestamps only: playback data/timing are unchanged.
+        const int64_t write_start_us = esp_timer_get_time();
+        if (diag_last_output_end_us_ > 0) {
+            const int64_t gap_ms = (write_start_us - diag_last_output_end_us_) / 1000;
+            if (gap_ms > 180) {
+                diag_output_gap_.fetch_add(1, std::memory_order_relaxed);
+                const uint32_t rounded = static_cast<uint32_t>(gap_ms > 60000 ? 60000 : gap_ms);
+                if (rounded > diag_max_gap_ms_.load(std::memory_order_relaxed)) {
+                    diag_max_gap_ms_.store(rounded, std::memory_order_relaxed);
+                }
+            }
+        }
         codec_->OutputData(task.pcm);
+        diag_last_output_end_us_ = esp_timer_get_time();
+        diag_played_.fetch_add(1, std::memory_order_relaxed);
+        const int64_t write_ms = (diag_last_output_end_us_ - write_start_us) / 1000;
+        const int64_t expected_ms = codec_->output_sample_rate() > 0
+            ? (static_cast<int64_t>(task.pcm.size()) * 1000 / codec_->output_sample_rate())
+            : 60;
+        if (write_ms > expected_ms + 45) {
+            diag_slow_write_.fetch_add(1, std::memory_order_relaxed);
+        }
 
         /* Update the last output time */
         last_output_time_ = std::chrono::steady_clock::now();
@@ -441,10 +462,13 @@ void AudioService::OpusCodecTask() {
                         task.pcm = std::move(resampled);
                     }
                     decoded = true;
+                    diag_decoded_.fetch_add(1, std::memory_order_relaxed);
                 } else {
+                    diag_decode_error_.fetch_add(1, std::memory_order_relaxed);
                     ESP_LOGE(TAG, "Failed to decode audio after resize, error code: %d", ret);
                 }
             } else {
+                diag_decode_error_.fetch_add(1, std::memory_order_relaxed);
                 ESP_LOGE(TAG, "Audio decoder is not configured");
             }
 
@@ -616,16 +640,54 @@ bool AudioService::PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> pa
                        audio_decode_queue_.size() < MAX_DECODE_PACKETS_IN_QUEUE;
             });
         } else {
+            diag_drop_queue_.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
     }
     if (service_stopped_.load() || generation != playback_generation_) {
+        diag_drop_reset_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
     playback_drained_notified_ = false;
     audio_decode_queue_.push_back(std::move(packet));
+    diag_accepted_.fetch_add(1, std::memory_order_relaxed);
     audio_queue_cv_.notify_all();
     return true;
+}
+
+void AudioService::NoteAudioPacketIgnoredByState() {
+    diag_drop_state_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void AudioService::LogAudioDiagnostics(const char* reason) {
+    size_t decode_depth = 0;
+    size_t pcm_depth = 0;
+    {
+        std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+        decode_depth = audio_decode_queue_.size();
+        pcm_depth = audio_playback_queue_.size();
+    }
+    const uint32_t accepted = diag_accepted_.load(std::memory_order_relaxed);
+    const uint32_t not_speaking = diag_drop_state_.load(std::memory_order_relaxed);
+    const uint32_t overflow = diag_drop_queue_.load(std::memory_order_relaxed);
+    const uint32_t reset = diag_drop_reset_.load(std::memory_order_relaxed);
+    ESP_LOGI("LUMI_AUDIO_DIAG",
+             "%s rx=%lu queued=%lu drop_state=%lu drop_full=%lu drop_reset=%lu "
+             "opus_ok=%lu opus_err=%lu pcm_out=%lu gap180=%lu max_gap_ms=%lu "
+             "i2s_slow=%lu q_opus=%u q_pcm=%u",
+             reason ? reason : "periodic",
+             static_cast<unsigned long>(accepted + not_speaking + overflow + reset),
+             static_cast<unsigned long>(accepted),
+             static_cast<unsigned long>(not_speaking),
+             static_cast<unsigned long>(overflow),
+             static_cast<unsigned long>(reset),
+             static_cast<unsigned long>(diag_decoded_.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(diag_decode_error_.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(diag_played_.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(diag_output_gap_.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(diag_max_gap_ms_.load(std::memory_order_relaxed)),
+             static_cast<unsigned long>(diag_slow_write_.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(decode_depth), static_cast<unsigned>(pcm_depth));
 }
 
 std::unique_ptr<AudioStreamPacket> AudioService::PopPacketFromSendQueue() {

@@ -12,7 +12,7 @@ final class LumiOpus {
     private LumiOpus(){}
     static final class Decoder {
         private final OpusDecoder codec;
-        Decoder() throws Exception{codec=OpusDecoder.create(16000,1);}
+        Decoder() throws Exception{codec=new OpusDecoder(16000,1);}
         short[] decode(byte[] opus) throws Exception {
             short[] pcm=new short[960];
             int n=codec.decode(opus,0,opus.length,pcm,0,960,false);
@@ -23,7 +23,7 @@ final class LumiOpus {
     interface PacketSink { boolean send(byte[] frame) throws Exception; }
     static int sendPcm(byte[] pcm,PacketSink sink) throws Exception {
         if(pcm.length<2)throw new IOException("Não foi gerado áudio PCM");
-        OpusEncoder enc=OpusEncoder.create(24000,1,OpusApplication.OPUS_APPLICATION_VOIP);
+        OpusEncoder enc=new OpusEncoder(24000,1,OpusApplication.OPUS_APPLICATION_VOIP);
         enc.setBitrate(32000);
         int frames=(pcm.length+2879)/2880;
         long start=android.os.SystemClock.elapsedRealtime();

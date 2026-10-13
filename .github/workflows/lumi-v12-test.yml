@@ -81,13 +81,15 @@ jobs:
         if: env.LUMI_SIGN == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.12.0
-          name: LUMI HUB V12 - Testes (compatibilidade V11)
+          tag_name: lumi-hub-v0.12.1
+          name: LUMI HUB V12.1 - Diagnóstico áudio corrigido
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: false
           make_latest: false
           body: |
-            V12 experimental do LUMI HUB para o Blackview Tab 15.
+            V12.1 experimental do LUMI HUB para o Blackview Tab 15.
+            Corrige falso timeout: a amostra tem ~26 segundos, mas o teste agora confirma
+            os primeiros 12 pacotes Opus sem esperar pela reprodução completa.
             Mantem 5 temas, equipamentos, meteorologia e dados da V11.
             Ferramentas MCP de memoria e verificacao WOL da TV LG.
             Ponte local de audio Opus e voz Raquel gravada apenas para testes:

@@ -52,17 +52,32 @@ public final class LumiCoreActivity extends Activity {
         if(!prefs.getBoolean("desk_gateway_enabled",false)){
             label("Ativa primeiro a ponte de testes.",13,textMuted);return;
         }
+        // O áudio de demonstração tem mais de 26 s. Validar a receção de
+        // 12 pacotes Opus, sem esperar pelo TTS stop nem declarar timeout falso.
+        final TextView outcome=new TextView(this);
+        outcome.setText("A ligar à ponte local…");
+        outcome.setTextSize(14);
+        outcome.setTextColor(textAccent);
+        outcome.setPadding(8,12,8,12);
+        panel.addView(outcome);
         try{
             final AtomicBoolean finished=new AtomicBoolean(false);
+            final java.util.concurrent.atomic.AtomicInteger packets=
+                new java.util.concurrent.atomic.AtomicInteger(0);
+            final AtomicBoolean handshake=new AtomicBoolean(false);
+            final AtomicBoolean ttsStarted=new AtomicBoolean(false);
             WebSocketClient client=new WebSocketClient(
                 new URI("ws://127.0.0.1:8765/xiaozhi/v1/")){
-                private int packets;
+                private void progress(String message){
+                    runOnUiThread(()->outcome.setText(message));
+                }
                 private void done(String message){
                     if(!finished.compareAndSet(false,true))return;
-                    runOnUiThread(()->label(message,13,textAccent));
+                    progress(message);
                     close();
                 }
-                @Override public void onOpen(ServerHandshake handshake){
+                @Override public void onOpen(ServerHandshake hs){
+                    progress("WebSocket ligado; a testar protocolo XiaoZhi…");
                     try{
                         JSONObject audio=new JSONObject().put("format","opus")
                             .put("sample_rate",16000).put("channels",1)
@@ -70,40 +85,68 @@ public final class LumiCoreActivity extends Activity {
                         send(new JSONObject().put("type","hello").put("version",1)
                             .put("transport","websocket")
                             .put("audio_params",audio).toString());
-                    }catch(Exception e){done("Falha no handshake local.");}
+                    }catch(Exception e){done("Falhou o envio do handshake.");}
                 }
                 @Override public void onMessage(String msg){
                     try{
                         JSONObject obj=new JSONObject(msg);
                         if("hello".equals(obj.optString("type"))){
+                            handshake.set(true);
+                            progress("Handshake recebido; a solicitar áudio…");
                             send(new JSONObject().put("type","listen")
                                 .put("state","start").put("mode","auto").toString());
+                        }else if("tts".equals(obj.optString("type"))){
+                            String state=obj.optString("state");
+                            if("start".equals(state)){
+                                ttsStarted.set(true);
+                                progress("Áudio iniciado; a receber pacotes Opus…");
+                            }else if("stop".equals(state)){
+                                done(packets.get()>0?
+                                    "Teste local OK: "+packets.get()+" pacotes Opus recebidos. "+
+                                    "Ainda falta ouvir na coluna da DESK.":
+                                    "O servidor terminou o áudio sem transmitir pacotes.");
+                            }
                         }
-                        if("tts".equals(obj.optString("type"))
-                            && "stop".equals(obj.optString("state"))){
-                            done(packets>0 ? "Teste local OK: "+packets+
-                                " pacotes Opus recebidos no tablet. Ainda falta ouvi-los " +
-                                "na coluna da DESK." :
-                                "Handshake OK, mas não chegou áudio Opus.");
-                        }
-                    }catch(Exception e){done("Resposta de teste inválida.");}
+                    }catch(Exception e){done("Mensagem de teste inválida.");}
                 }
                 @Override public void onMessage(ByteBuffer buffer){
-                    if(buffer.remaining()>0)packets++;
+                    if(!ttsStarted.get()||buffer.remaining()<1)return;
+                    int n=packets.incrementAndGet();
+                    if(n>=12){
+                        done("Teste local OK: "+n+" pacotes Opus recebidos. "+
+                            "Ponte e transmissão de áudio confirmadas no tablet. "+
+                            "A coluna da DESK ainda não foi testada.");
+                    }
                 }
                 @Override public void onClose(int code,String reason,boolean remote){
-                    if(!finished.get())done("Teste terminado sem resposta de voz.");
+                    if(!finished.get()){
+                        done("Ligação terminou antes de receber áudio suficiente "+
+                            "(código "+code+").");
+                    }
                 }
                 @Override public void onError(Exception error){
-                    done("Não foi possível ligar ao servidor de voz local.");
+                    done("Erro na ligação local: "+error.getClass().getSimpleName());
                 }
             };
             client.addHeader("Authorization","Bearer "+DeskTestOta.key(prefs));
             client.connect();
             new android.os.Handler(getMainLooper()).postDelayed(()->{
-                if(!finished.get()){client.close();label("Teste excedeu 15 segundos.",13,textMuted);}
+                if(finished.compareAndSet(false,true)){
+                    if(packets.get()>0){
+                        outcome.setText("Áudio parcial: "+packets.get()+
+                            " pacotes recebidos, mas teste não concluído.");
+                    }else if(handshake.get()){
+                        outcome.setText("Handshake OK, mas não chegaram pacotes Opus em 15 segundos.");
+                    }else{
+                        outcome.setText("Sem handshake da ponte local em 15 segundos. "+
+                            "Verifica o estado e reinicia a ponte.");
+                    }
+                    client.close();
+                }
             },15000);
-        }catch(Exception ex){label("Falha a preparar o teste.",13,textMuted);}
+        }catch(Exception e){
+            outcome.setText("Não foi possível preparar o teste local.");
+        }
     }
     private void showBridge(){
         label("Ponte: "+prefs.getString("desk_gateway_state","Aguarda ativação"),14,

@@ -27,6 +27,8 @@
         </activity>
         <activity android:name=".LumiTabletActivity"
             android:exported="false" />
+        <activity android:name=".LumiCoreActivity"
+            android:exported="false" />
         <activity android:name=".OfflineVoiceLabActivity"
             android:exported="false" />
         <activity android:name=".CameraRoomActivity"

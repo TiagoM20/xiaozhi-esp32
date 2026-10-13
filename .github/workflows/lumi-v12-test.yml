@@ -44,6 +44,10 @@ jobs:
           python3 tools/lumi-v12/ogg_packets.py /tmp/lumi-raquel-60ms.ogg \
             lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
           test -s lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+      - name: Diagnosticar classes da biblioteca Opus
+        run: |
+          gradle -p lumi-hub-android :app:dependencies --configuration debugCompileClasspath --no-daemon | grep -i -C 2 concentus || true
+          find ~/.gradle/caches/modules-2/files-2.1 -name '*concentus*.jar' -print -exec sh -c 'jar tf "$1" | head -n 30' _ {} \; || true
       - name: Compilar V12 de diagnostico
         run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4

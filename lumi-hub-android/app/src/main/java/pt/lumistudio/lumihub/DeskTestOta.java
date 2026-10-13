@@ -78,8 +78,19 @@ public final class DeskTestOta implements AutoCloseable {
             BufferedReader input=new BufferedReader(new InputStreamReader(
                 socket.getInputStream(),StandardCharsets.US_ASCII));
             String req=input.readLine();
+            int contentLength=0;
             for(int i=0;i<64;i++){
                 String h=input.readLine();if(h==null||h.isEmpty())break;
+                if(h.regionMatches(true,0,"Content-Length:",0,15)){
+                    contentLength=Integer.parseInt(h.substring(15).trim());
+                }
+            }
+            if(contentLength<0||contentLength>32768)return;
+            char[] ignoredBody=new char[2048];
+            while(contentLength>0){
+                int n=input.read(ignoredBody,0,Math.min(contentLength,ignoredBody.length));
+                if(n<0)return;
+                contentLength-=n;
             }
             boolean allowed=req!=null
                 && (req.startsWith("GET /lumi/ota/")||req.startsWith("POST /lumi/ota/"))

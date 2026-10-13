@@ -81,13 +81,17 @@ jobs:
         if: env.LUMI_SIGN == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.12.1
-          name: LUMI HUB V12.1 - Diagnóstico áudio corrigido
+          tag_name: lumi-hub-v0.12.2
+          name: LUMI HUB V12.2 - Conversação Raquel PT-PT (experimental)
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: false
           make_latest: false
           body: |
-            V12.1 experimental do LUMI HUB para o Blackview Tab 15.
+            V12.2 experimental do LUMI HUB para o Blackview Tab 15.
+            Azure STT pt-PT, IA via OpenAI e Azure Raquel Neural TTS,
+            com codificacao Opus e chaves encriptadas no Android Keystore.
+            Requer chaves Azure Speech e OpenAI API; podem existir custos.
+            Ainda nao foi validado com os servicos externos nem a coluna fisica.
             Corrige falso timeout: a amostra tem ~26 segundos, mas o teste agora confirma
             os primeiros 12 pacotes Opus sem esperar pela reprodução completa.
             Mantem 5 temas, equipamentos, meteorologia e dados da V11.

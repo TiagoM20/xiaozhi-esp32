@@ -184,6 +184,10 @@ public final class LumiCoreActivity extends Activity {
         }
         label("Já disponível: guardar e procurar memórias por MCP quando o agente usar " +
             "as ferramentas. A conversa e a voz na DESK continuam no XiaoZhi atual.",14,textMuted);
+        button("Configurar Raquel PT-PT e IA",()->
+            startActivity(new Intent(this,LumiVoiceSetupActivity.class)));
+        label("Conversação PT-PT: precisa de Azure Speech e chave de IA; chamadas " +
+            "externas podem ter custos. Sem credenciais fica a demonstração.",13,textMuted);
         button("Ouvir e escolher voz PT-PT no tablet",()->
             startActivity(new Intent(this,OfflineVoiceLabActivity.class)));
         button("Abrir assistente local do tablet",()->

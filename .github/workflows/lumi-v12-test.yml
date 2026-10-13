@@ -1,0 +1,107 @@
+name: LUMI V12 - APK e firmware de teste (sem publicacao)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-v12-hub-desk-20261013]
+    paths:
+      - 'lumi-hub-android/**'
+      - 'main/application.cc'
+      - '.github/workflows/lumi-v12-test.yml'
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar SDK Android
+        run: |
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDK_MANAGER"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar V12 de diagnostico
+        run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-V12-debug-NAO-ATUALIZA-APP-ASSINADA
+          path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+      - name: Preparar assinatura de atualizacao
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+            echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+            echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "LUMI_SIGN=true" >> "$GITHUB_ENV"
+          fi
+      - name: Compilar APK assinado (para atualizar V11)
+        if: env.LUMI_SIGN == 'true'
+        run: gradle -p lumi-hub-android :app:assembleRelease --no-daemon
+      - name: Verificar assinatura e disponibilizar APK assinado
+        if: env.LUMI_SIGN == 'true'
+        run: |
+          cd lumi-hub-android/app/build/outputs/apk/release
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app-release.apk
+          cp app-release.apk LUMI-HUB-V12-TESTE-ASSINADO.apk
+      - uses: actions/upload-artifact@v4
+        if: env.LUMI_SIGN == 'true'
+        with:
+          name: LUMI-HUB-V12-assinado-testes
+          path: lumi-hub-android/app/build/outputs/apk/release/LUMI-HUB-V12-TESTE-ASSINADO.apk
+          retention-days: 14
+  build-firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aplicar configuracao LUMI DESK estavel
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          config=json.loads(path.read_text(encoding="utf-8"))
+          overrides={
+            "CONFIG_USE_DEVICE_AEC":"n","CONFIG_USE_SERVER_AEC":"n",
+            "CONFIG_WAKE_WORD_DISABLED":"n","CONFIG_USE_ESP_WAKE_WORD":"n",
+            "CONFIG_USE_AFE_WAKE_WORD":"n","CONFIG_USE_CUSTOM_WAKE_WORD":"y",
+            "CONFIG_CUSTOM_WAKE_WORD":'"ola lumi"',
+            "CONFIG_CUSTOM_WAKE_WORD_DISPLAY":'"Olá Lumi"',
+            "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD":"20",
+            "CONFIG_SEND_WAKE_WORD_DATA":"y","CONFIG_SR_MN_CN_NONE":"y",
+            "CONFIG_SR_MN_EN_MULTINET6_QUANT":"y"
+          }
+          cfg=config["builds"][0]["sdkconfig_append"]
+          cfg=[x for x in cfg if x.split("=",1)[0] not in overrides]
+          cfg += [f"{k}={v}" for k,v in overrides.items()]
+          config["builds"][0]["sdkconfig_append"]=cfg
+          path.write_text(json.dumps(config,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          PY
+      - name: Compilar firmware de compatibilidade V12
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 \
+            --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          grep -qx 'CONFIG_USE_CUSTOM_WAKE_WORD=y' sdkconfig
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          test -s build/xiaozhi.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-DESK-V12-firmware-CANDIDATO-NAO-INSTALAR
+          path: |
+            build/xiaozhi.bin
+            sdkconfig
+          retention-days: 14

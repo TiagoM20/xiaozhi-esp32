@@ -63,17 +63,21 @@ public final class LumiCoreActivity extends Activity {
                     close();
                 }
                 @Override public void onOpen(ServerHandshake handshake){
-                    send("{\\"type\\":\\"hello\\",\\"version\\":1,"+
-                        "\\"transport\\":\\"websocket\\",\\"audio_params\\":"+
-                        "{\\"format\\":\\"opus\\",\\"sample_rate\\":16000,"+
-                        "\\"channels\\":1,\\"frame_duration\\":60}}");
+                    try{
+                        JSONObject audio=new JSONObject().put("format","opus")
+                            .put("sample_rate",16000).put("channels",1)
+                            .put("frame_duration",60);
+                        send(new JSONObject().put("type","hello").put("version",1)
+                            .put("transport","websocket")
+                            .put("audio_params",audio).toString());
+                    }catch(Exception e){done("Falha no handshake local.");}
                 }
                 @Override public void onMessage(String msg){
                     try{
                         JSONObject obj=new JSONObject(msg);
                         if("hello".equals(obj.optString("type"))){
-                            send("{\\"type\\":\\"listen\\",\\"state\\":\\"start\\","+
-                                "\\"mode\\":\\"auto\\"}");
+                            send(new JSONObject().put("type","listen")
+                                .put("state","start").put("mode","auto").toString());
                         }
                         if("tts".equals(obj.optString("type"))
                             && "stop".equals(obj.optString("state"))){

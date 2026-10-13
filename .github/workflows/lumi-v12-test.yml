@@ -48,6 +48,11 @@ jobs:
         run: |
           gradle -p lumi-hub-android :app:dependencies --configuration debugCompileClasspath --no-daemon | grep -i -C 2 concentus || true
           find ~/.gradle/caches/modules-2/files-2.1 -name '*concentus*.jar' -print -exec sh -c 'jar tf "$1" | head -n 30' _ {} \; || true
+      - name: Inspecionar pacote Maven Opus
+        run: |
+          curl -fLsS --retry 2 'https://repo.maven.apache.org/maven2/io/github/jaredmdobson/concentus/1.0.2/concentus-1.0.2.jar' -o /tmp/lumi-concentus.jar
+          jar tf /tmp/lumi-concentus.jar | head -n 15
+          jar tf /tmp/lumi-concentus.jar | grep -Ei 'Opus(Encoder|Decoder|Application)' | head -n 15
       - name: Compilar V12 de diagnostico
         run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4

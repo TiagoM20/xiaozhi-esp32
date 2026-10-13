@@ -21,7 +21,7 @@
 3. Confirmar as memórias existentes e ouvir uma voz PT-PT no laboratório do tablet.
 4. Associar o MCP ao agente, se não estiver já associado. Iniciar a central Android.
 5. Pedir à LUMI DESK atual: «Lumi, lembra-te de uma história chamada ...». Confirmar no HUB se a ferramenta `lumi.memoria_guardar` foi chamada. Se não, é necessária orientação do agente na consola XiaoZhi; não interpretar a ausência como sucesso.
-6. Em casa, com o tablet e a DESK na mesma rede Wi-Fi, ativar a ponte de áudio na página **LUMI CORE V12**. «Ver estado da ponte» deverá indicar que as portas estão prontas.
+6. Em casa, com o tablet e a DESK na mesma rede Wi-Fi, ativar a ponte de áudio na página **LUMI CORE V12**. Premir **«Testar ligação de áudio no próprio tablet»**; deve confirmar pacotes Opus recebidos no tablet. Isto ainda não confirma som na coluna da DESK. «Ver estado da ponte» mostra o estado das portas.
 7. **Parar aqui até confirmação de recuperação.** Copiar o endereço privado da OTA local apenas depois de guardar o **endereço original de OTA XiaoZhi**. O endereço contém uma chave privada; não o enviar em capturas.
 8. Configurar temporariamente a DESK para a OTA local pelo modo de provisionamento avançado documentado para o firmware atual **somente após autorização expressa**. A resposta da OTA local fornece `websocket.url` e `token`, sem solicitar atualizações de firmware; envia áudio de demonstração quando a DESK iniciar a escuta.
 9. Se a ligação não funcionar, regressar à OTA original e ao firmware de reserva. Não apagar NVS, partição de assets ou GIFs; não utilizar `erase_flash` nem flash integral de um binário de aplicação.

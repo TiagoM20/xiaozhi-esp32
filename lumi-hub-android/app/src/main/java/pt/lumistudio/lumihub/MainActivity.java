@@ -864,7 +864,7 @@ public final class MainActivity extends Activity {
             ()->tvCommand("ssap://system.launcher/launch",false)),1,8);
         add(card,media,8);
         LinearLayout power=horizontal();
-        addWeighted(power,button("Ligar TV  ·  WOL",true,this::tvWake),1,0);
+        addWeighted(power,button("Ligar TV · Wi-Fi",true,this::tvWake),1,0);
         addWeighted(power,button("Desligar TV",false,
             ()->tvCommand("ssap://system/turnOff",false)),1,8);
         add(card,power,9);
@@ -1001,8 +1001,11 @@ public final class MainActivity extends Activity {
         add(c,label("Ligações de voz e comandos",12,MUTED,true),15);
         add(c,label("Ligação MCP: "+mcpStatus(),14,
             mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),7);
-        add(c,label("O MCP permite à DESK pedir comandos ao Hub. Ainda não cria " +
-            "um canal para o tablet mandar a DESK falar ou tocar.",12,MUTED,false),7);
+        add(c,label("O MCP permite controlar a TV e guardar ou procurar recordações, " +
+            "quando o agente da XiaoZhi chama as ferramentas.",12,MUTED,false),7);
+        add(c,label("Memórias guardadas: "+memories.count(),13,CYAN,true),9);
+        add(c,label("Diz «Lumi, lembra-te que…». A ferramenta só funciona " +
+            "com MCP associado e central ativa.",12,MUTED,false),6);
 
         add(c,label("LUMI NO TAB 15",14,CYAN,true),19);
         add(c,label("Versão local com microfone e texto: comandos reais " +
@@ -1019,7 +1022,9 @@ public final class MainActivity extends Activity {
             "para o dispositivo físico, diferente do MCP usado para a TV. " +
             "Não vou colocar um botão que finja reproduzir áudio.",13,MUTED,false),7);
 
-        add(c,button("Configurar MCP da LUMI DESK",false,this::mcpSettings),16);
+        add(c,button("LUMI CORE V12 · Testes de voz",true,()->
+            startActivity(new Intent(this,LumiCoreActivity.class))),12);
+        add(c,button("Configurar MCP da LUMI DESK",false,this::mcpSettings),8);
         add(c,button("Diagnóstico do Hub",false,this::diagnostics),8);
         add(stage,c,16);
     }
@@ -1034,7 +1039,7 @@ public final class MainActivity extends Activity {
             +"\nCarregamento: "+(charging()?"sim":"não")
             +"\nÚltima leitura: "+last
             +"\nTV da Sala: "+lastTv()
-            +"\nLUMI DESK: sem ligação de diagnóstico"
+            +"\nLUMI DESK: "+p.getString("desk_gateway_state","Por testar") + ""
             +"\nLogs internos ESP32: não disponíveis");
     }
     private void tabletDetails() {

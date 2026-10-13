@@ -1,4 +1,4 @@
-name: LUMI V12 - APK e firmware de teste (sem publicacao)
+name: LUMI V12 - APK assinado e firmware de teste
 on:
   workflow_dispatch:
   push:
@@ -7,6 +7,8 @@ on:
       - 'lumi-hub-android/**'
       - 'main/application.cc'
       - '.github/workflows/lumi-v12-test.yml'
+permissions:
+  contents: write
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -75,6 +77,24 @@ jobs:
           name: LUMI-HUB-V12-assinado-testes
           path: lumi-hub-android/app/build/outputs/apk/release/LUMI-HUB-V12-TESTE-ASSINADO.apk
           retention-days: 14
+      - name: Publicar V12 RC1 assinada (sem substituir ultima release firmware)
+        if: env.LUMI_SIGN == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hub-v0.12.0-rc1
+          name: LUMI HUB V12 - RC1 para testes
+          target_commitish: feature/lumi-v12-hub-desk-20261013
+          prerelease: true
+          make_latest: false
+          body: |
+            V12 experimental do LUMI HUB para o Blackview Tab 15.
+            Mantem 5 temas, equipamentos, meteorologia e dados da V11.
+            Ferramentas MCP de memoria e verificacao WOL da TV LG.
+            Ponte local de audio Opus e voz Raquel gravada apenas para testes:
+            ainda nao faz conversa livre nem TTS dinamico.
+            ATENCAO: nao alterar OTA nem instalar novo firmware da DESK
+            ate o backup e retorno ao servidor anterior estarem verificados.
+          files: lumi-hub-android/app/build/outputs/apk/release/LUMI-HUB-V12-TESTE-ASSINADO.apk
   build-firmware:
     runs-on: ubuntu-latest
     timeout-minutes: 50

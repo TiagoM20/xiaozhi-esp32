@@ -26,6 +26,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Incorporar amostra original Raquel PT-PT como Opus 24 kHz / 60 ms
+        run: |
+          set -e
+          mkdir -p lumi-hub-android/app/src/main/assets
+          curl -fLsS --retry 3 --max-time 60 \
+            https://github.com/TiagoM20/xiaozhi-esp32/releases/download/lumi-voice-ptpt-demo-v0.1/LUMI-Raquel-PTPT-Demo.mp3 \
+            -o /tmp/lumi-raquel-demo.mp3
+          test "$(stat -c%s /tmp/lumi-raquel-demo.mp3)" -gt 15000
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/lumi-raquel-demo.mp3 \
+            -ar 24000 -ac 1 -c:a libopus -b:a 32k -frame_duration 60 -vbr off \
+            -application voip -f ogg /tmp/lumi-raquel-60ms.ogg
+          python3 tools/lumi-v12/ogg_packets.py /tmp/lumi-raquel-60ms.ogg \
+            lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+          test -s lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
       - name: Compilar V12 de diagnostico
         run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4

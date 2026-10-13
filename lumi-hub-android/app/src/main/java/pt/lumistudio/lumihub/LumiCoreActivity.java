@@ -5,6 +5,12 @@ import android.content.Context;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.os.Build;
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.handshake.ServerHandshake;
+import org.json.JSONObject;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -41,6 +47,59 @@ public final class LumiCoreActivity extends Activity {
         }
         label(on?"Ponte pedida. Aguarda alguns segundos e consulta o estado.":
             "Ponte desligada.",13,textMuted);
+    }
+    private void localBridgeTest(){
+        if(!prefs.getBoolean("desk_gateway_enabled",false)){
+            label("Ativa primeiro a ponte de testes.",13,textMuted);return;
+        }
+        try{
+            final AtomicBoolean finished=new AtomicBoolean(false);
+            WebSocketClient client=new WebSocketClient(
+                new URI("ws://127.0.0.1:8765/xiaozhi/v1/")){
+                private int packets;
+                private void done(String message){
+                    if(!finished.compareAndSet(false,true))return;
+                    runOnUiThread(()->label(message,13,textAccent));
+                    close();
+                }
+                @Override public void onOpen(ServerHandshake handshake){
+                    send("{\\"type\\":\\"hello\\",\\"version\\":1,"+
+                        "\\"transport\\":\\"websocket\\",\\"audio_params\\":"+
+                        "{\\"format\\":\\"opus\\",\\"sample_rate\\":16000,"+
+                        "\\"channels\\":1,\\"frame_duration\\":60}}");
+                }
+                @Override public void onMessage(String msg){
+                    try{
+                        JSONObject obj=new JSONObject(msg);
+                        if("hello".equals(obj.optString("type"))){
+                            send("{\\"type\\":\\"listen\\",\\"state\\":\\"start\\","+
+                                "\\"mode\\":\\"auto\\"}");
+                        }
+                        if("tts".equals(obj.optString("type"))
+                            && "stop".equals(obj.optString("state"))){
+                            done(packets>0 ? "Teste local OK: "+packets+
+                                " pacotes Opus recebidos no tablet. Ainda falta ouvi-los " +
+                                "na coluna da DESK." :
+                                "Handshake OK, mas não chegou áudio Opus.");
+                        }
+                    }catch(Exception e){done("Resposta de teste inválida.");}
+                }
+                @Override public void onMessage(ByteBuffer buffer){
+                    if(buffer.remaining()>0)packets++;
+                }
+                @Override public void onClose(int code,String reason,boolean remote){
+                    if(!finished.get())done("Teste terminado sem resposta de voz.");
+                }
+                @Override public void onError(Exception error){
+                    done("Não foi possível ligar ao servidor de voz local.");
+                }
+            };
+            client.addHeader("Authorization","Bearer "+DeskTestOta.key(prefs));
+            client.connect();
+            new android.os.Handler(getMainLooper()).postDelayed(()->{
+                if(!finished.get()){client.close();label("Teste excedeu 15 segundos.",13,textMuted);}
+            },15000);
+        }catch(Exception ex){label("Falha a preparar o teste.",13,textMuted);}
     }
     private void showBridge(){
         label("Ponte: "+prefs.getString("desk_gateway_state","Aguarda ativação"),14,
@@ -91,6 +150,7 @@ public final class LumiCoreActivity extends Activity {
         button("Ativar ponte de testes no tablet",()->toggleBridge(true));
         button("Parar ponte de testes",()->toggleBridge(false));
         button("Copiar endereço OTA local para emparelhar",this::copyOta);
+        button("Testar ligação de áudio no próprio tablet",this::localBridgeTest);
         button("Ver estado da ponte",this::showBridge);
         button("Voltar",this::finish);
     }

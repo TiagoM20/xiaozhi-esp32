@@ -1127,8 +1127,8 @@ public final class MainActivity extends Activity {
         }
         LinearLayout c=panel();
         c.addView(label("Versão instalada: "+versionName(),18,WHITE,true));
-        add(c,label("Só as versões Android assinadas são apresentadas aqui. "
-            +"O firmware da LUMI DESK não é instalado por esta opção.",13,MUTED,false),9);
+        add(c,label("Versões estáveis e de testes assinadas, claramente identificadas. " +
+            "O firmware da LUMI DESK não é instalado por esta opção.",13,MUTED,false),9);
         add(c,button("Procurar atualizações",true,this::loadReleases),14);
         add(stage,c,16);
         LinearLayout list=vertical();
@@ -1195,6 +1195,9 @@ public final class MainActivity extends Activity {
     private int[] versionNumbers(String version) {
         String cleaned=version.startsWith("lumi-hub-v")
             ?version.substring("lumi-hub-v".length()):version;
+        // As tags de teste podem terminar em -rc1; o APK usa a versão 0.12.0.
+        int suffix=cleaned.indexOf('-');
+        if(suffix>=0)cleaned=cleaned.substring(0,suffix);
         String[] chunks=cleaned.split("[.]");
         int[] parts=new int[]{0,0,0};
         for(int i=0;i<Math.min(chunks.length,3);i++) {
@@ -1264,14 +1267,19 @@ public final class MainActivity extends Activity {
                 java.util.ArrayList<JSONObject> versions=new java.util.ArrayList<>();
                 for(int i=0;i<result.length();i++) {
                     JSONObject release=result.optJSONObject(i);
-                    if(release==null || release.optBoolean("draft")
-                        || release.optBoolean("prerelease")) continue;
+                    if(release==null || release.optBoolean("draft")) continue;
                     String tag=release.optString("tag_name","");
                     if(!tag.startsWith("lumi-hub-v"))continue;
                     versions.add(release);
                 }
-                versions.sort((left,right)->compareVersions(
-                    right.optString("tag_name",""),left.optString("tag_name","")));
+                versions.sort((left,right)->{
+                    int numeric=compareVersions(right.optString("tag_name",""),
+                        left.optString("tag_name",""));
+                    if(numeric!=0)return numeric;
+                    // Se existir a mesma versão estável e RC, mostrar primeiro a estável.
+                    return Boolean.compare(left.optBoolean("prerelease"),
+                        right.optBoolean("prerelease"));
+                });
                 String installed=versionName();
                 if(!versions.isEmpty()){
                     JSONObject latest=versions.get(0);
@@ -1279,12 +1287,16 @@ public final class MainActivity extends Activity {
                     int comparison=compareVersions(tag,installed);
                     LinearLayout summary=panel();
                     if(comparison>0){
-                        summary.addView(label("Nova atualização disponível",19,GREEN,true));
+                        summary.addView(label(latest.optBoolean("prerelease")
+                            ? "Nova versão de testes disponível"
+                            : "Nova atualização disponível",19,GREEN,true));
                         add(summary,label("LUMI Hub "+tag.substring("lumi-hub-v".length())
                             +" · instalada "+installed,14,WHITE,false),8);
                         String link=releaseApkUrl(latest);
                         if(!link.isEmpty()){
-                            add(summary,button("Descarregar atualização",true,
+                            add(summary,button(latest.optBoolean("prerelease")
+                                ? "Descarregar versão de testes"
+                                : "Descarregar atualização",true,
                                 ()->downloadApk(link,tag)),12);
                         }else add(summary,label("O APK ainda não está disponível.",
                             12,GOLD,false),8);
@@ -1301,8 +1313,9 @@ public final class MainActivity extends Activity {
                     LinearLayout tile=panel();
                     String name=rel.optString("name",tag);
                     tile.addView(label(name,16,WHITE,true));
-                    String marker=compareVersions(tag,installed)==0
-                        ?" · Instalada" : "";
+                    String marker=(rel.optBoolean("prerelease")
+                        ? " · Testes" : " · Estável")
+                        +(compareVersions(tag,installed)==0?" · Instalada":"");
                     add(tile,label(tag+marker,12,CYAN,false),5);
                     add(tile,label(rel.optString("body","Sem descrição"),
                         12,MUTED,false),7);

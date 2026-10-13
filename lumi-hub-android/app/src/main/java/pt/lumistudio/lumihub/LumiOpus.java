@@ -1,8 +1,8 @@
 package pt.lumistudio.lumihub;
 
-import org.concentus.OpusApplication;
-import org.concentus.OpusDecoder;
-import org.concentus.OpusEncoder;
+import io.github.jaredmdobson.concentus.OpusApplication;
+import io.github.jaredmdobson.concentus.OpusDecoder;
+import io.github.jaredmdobson.concentus.OpusEncoder;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;

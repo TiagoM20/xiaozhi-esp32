@@ -18,6 +18,7 @@ import android.widget.TextView;
 public final class LumiCoreActivity extends Activity {
     private LinearLayout panel;
     private SharedPreferences prefs;
+    private int textPrimary, textMuted, textAccent;
 
     private void label(String value,int size,int color){
         TextView t=new TextView(this);
@@ -39,51 +40,54 @@ public final class LumiCoreActivity extends Activity {
             }catch(Exception ex){label("Não foi possível iniciar a central.",13,Color.RED);}
         }
         label(on?"Ponte pedida. Aguarda alguns segundos e consulta o estado.":
-            "Ponte desligada.",13,Color.LTGRAY);
+            "Ponte desligada.",13,textMuted);
     }
     private void showBridge(){
         label("Ponte: "+prefs.getString("desk_gateway_state","Aguarda ativação"),14,
-            Color.rgb(130,231,220));
+            textAccent);
     }
     private void copyOta(){
         if(!prefs.getBoolean("desk_gateway_enabled",false)){
-            label("Ativa primeiro a ponte de testes.",13,Color.LTGRAY);return;
+            label("Ativa primeiro a ponte de testes.",13,textMuted);return;
         }
         String url=DeskTestOta.pairingUrl(prefs);
-        if(url==null){label("Não há IP Wi-Fi local disponível.",13,Color.LTGRAY);return;}
+        if(url==null){label("Não há IP Wi-Fi local disponível.",13,textMuted);return;}
         ClipboardManager clipboard=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("LUMI OTA local",url));
         label("Endereço privado copiado. Não o publiques; contém a chave de emparelhamento.",
-            13,Color.LTGRAY);
+            13,textMuted);
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         prefs=getSharedPreferences("hub",MODE_PRIVATE);
+        HubThemes.Palette palette=HubThemes.get(HubThemes.bounded(
+            prefs.getInt("hub_theme",0)));
+        textPrimary=palette.text;textMuted=palette.muted;textAccent=palette.accent;
         ScrollView scroll=new ScrollView(this);
         panel=new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(20,20,20,30);
-        panel.setBackgroundColor(Color.rgb(14,21,35));
+        panel.setBackgroundColor(palette.background);
         scroll.addView(panel);setContentView(scroll);
-        label("LUMI CORE · V12",24,Color.WHITE);
-        label("Preparação da ligação entre memória, voz PT-PT e LUMI DESK.",15,Color.LTGRAY);
+        label("LUMI CORE · V12",24,textPrimary);
+        label("Preparação da ligação entre memória, voz PT-PT e LUMI DESK.",15,textMuted);
         label("Estado MCP: "+prefs.getString("mcp_state","Por configurar"),14,
-            Color.rgb(130,231,220));
+            textAccent);
         try(MemoryDb db=new MemoryDb(this)){
-            label("Recordações locais: "+db.count(),16,Color.WHITE);
+            label("Recordações locais: "+db.count(),16,textPrimary);
         }
         label("Já disponível: guardar e procurar memórias por MCP quando o agente usar " +
-            "as ferramentas. A conversa e a voz na DESK continuam no XiaoZhi atual.",14,Color.LTGRAY);
+            "as ferramentas. A conversa e a voz na DESK continuam no XiaoZhi atual.",14,textMuted);
         button("Ouvir e escolher voz PT-PT no tablet",()->
             startActivity(new Intent(this,OfflineVoiceLabActivity.class)));
         button("Abrir assistente local do tablet",()->
             startActivity(new Intent(this,LumiTabletActivity.class)));
         label("Próxima ligação: ponte WebSocket Opus do tablet para a DESK, " +
-            "testada antes de qualquer mudança do firmware.",13,Color.LTGRAY);
-        label("PONTE DE VOZ (EXPERIMENTAL)",16,Color.rgb(130,231,220));
+            "testada antes de qualquer mudança do firmware.",13,textMuted);
+        label("PONTE DE VOZ (EXPERIMENTAL)",16,textAccent);
         label("Este modo envia apenas uma frase previamente gravada em Opus para a " +
             "Waveshare, não responde ainda a perguntas. Só ativar quando a DESK " +
-            "tiver um backup verificado e o endereço original do servidor guardado.",13,Color.LTGRAY);
+            "tiver um backup verificado e o endereço original do servidor guardado.",13,textMuted);
         button("Ativar ponte de testes no tablet",()->toggleBridge(true));
         button("Parar ponte de testes",()->toggleBridge(false));
         button("Copiar endereço OTA local para emparelhar",this::copyOta);

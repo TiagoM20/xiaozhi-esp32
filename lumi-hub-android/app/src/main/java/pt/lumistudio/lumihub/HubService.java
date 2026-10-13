@@ -17,6 +17,7 @@ public final class HubService extends Service {
     private static final String CHANNEL = "lumi_hub_service";
     private BroadcastReceiver batteryReceiver;
     private XiaozhiMcpBridge mcpBridge;
+    private DeskVoiceGateway deskGateway;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -56,6 +57,11 @@ public final class HubService extends Service {
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", true).apply();
         mcpBridge = new XiaozhiMcpBridge(this);
         mcpBridge.start();
+        if (getSharedPreferences("hub",MODE_PRIVATE)
+                .getBoolean("desk_gateway_enabled",false)) {
+            deskGateway = new DeskVoiceGateway(this);
+            deskGateway.start();
+        }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -63,6 +69,7 @@ public final class HubService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (deskGateway != null) deskGateway.close();
         if (mcpBridge != null) mcpBridge.stop();
         if (batteryReceiver != null) unregisterReceiver(batteryReceiver);
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", false).apply();

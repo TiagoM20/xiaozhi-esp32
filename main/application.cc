@@ -566,9 +566,18 @@ void Application::InitializeProtocol() {
 
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
-    if (ota_->HasMqttConfig()) {
+    // LUMI V12: quando a OTA foi explicitamente configurada para o HUB,
+    // preferir o WebSocket local (mesmo que a resposta inclua MQTT).
+    // Na OTA publica o comportamento anterior e preservado.
+    const bool lumi_hub_ota = ota_->GetCheckVersionUrl().find("/lumi/ota/") != std::string::npos;
+    if (lumi_hub_ota && ota_->HasWebsocketConfig()) {
+        ESP_LOGI(TAG, "LUMI V12: OTA local do HUB, a usar WebSocket");
+        protocol_ = std::make_unique<WebsocketProtocol>();
+    } else if (ota_->HasMqttConfig()) {
+        ESP_LOGI(TAG, "LUMI V12: OTA publica, a usar MQTT");
         protocol_ = std::make_unique<MqttProtocol>();
     } else if (ota_->HasWebsocketConfig()) {
+        ESP_LOGI(TAG, "LUMI V12: OTA selecionou WebSocket");
         protocol_ = std::make_unique<WebsocketProtocol>();
     } else {
         ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");

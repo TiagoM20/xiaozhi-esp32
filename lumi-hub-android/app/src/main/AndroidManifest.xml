@@ -28,6 +28,7 @@
         <activity android:name=".LumiTabletActivity"
             android:exported="false" />
         <activity android:name=".LumiVoiceSetupActivity" android:exported="false" />
+        <activity android:name=".DeskLogActivity" android:exported="false" />
         <activity android:name=".LumiCoreActivity"
             android:exported="false" />
         <activity android:name=".OfflineVoiceLabActivity"

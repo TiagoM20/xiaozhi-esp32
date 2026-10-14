@@ -41,7 +41,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
         context=ctx.getApplicationContext();
         prefs=context.getSharedPreferences("hub",Context.MODE_PRIVATE);
     }
-    private void status(String s){prefs.edit().putString("desk_gateway_state",s).apply();}
+    private void status(String s){prefs.edit().putString("desk_gateway_state",s).apply();DeskLog.event(context,"ESTADO",s);}
     private boolean configured(){
         return !LumiSecrets.get(context,"azure").isEmpty()
             && !LumiSecrets.get(context,"openai").isEmpty();
@@ -60,7 +60,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
                         || !("Bearer "+token).equals(h.getFieldValue("Authorization"))){
                         c.close(1008,"Emparelhamento obrigatório");return;
                     }
-                    sessions.put(c,new Session());status("DESK ligada à ponte local");
+                    sessions.put(c,new Session());status("DESK ligada à ponte local");DeskLog.event(context,"REDE","DESK ligada por WebSocket");
                 }
                 @Override public void onMessage(WebSocket c,String msg){
                     Session s=sessions.get(c);if(s==null||s.closed)return;
@@ -75,11 +75,12 @@ public final class DeskVoiceGateway implements AutoCloseable {
                                     .put("format","opus").put("sample_rate",24000)
                                     .put("channels",1).put("frame_duration",60))
                                 .toString());
-                            status("Handshake XiaoZhi concluído");
+                            status("Handshake XiaoZhi concluído");DeskLog.event(context,"PROTOCOLO","Handshake da DESK concluído");
                         }else if("listen".equals(type)){
                             String state=j.optString("state");
                             if("start".equals(state)&&!s.busy.get()){
                                 s.start();
+                                DeskLog.event(context,"MICROFONE","Início de escuta");
                                 if(configured())status("A ouvir em português de Portugal");
                                 else if(s.busy.compareAndSet(false,true))
                                     new Thread(()->demo(c,s),"LumiDemo").start();
@@ -87,7 +88,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
                                 complete(c,s);
                             }
                         }else if("abort".equals(type)){
-                            s.listening=false;
+                            s.listening=false;DeskLog.event(context,"MICROFONE","Escuta abortada");
                         }
                     }catch(Exception e){status("Mensagem de protocolo inválida");}
                 }
@@ -99,7 +100,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
                 }
                 @Override public void onClose(WebSocket c,int code,String reason,boolean remote){
                     Session s=sessions.remove(c);
-                    if(s!=null){s.closed=true;s.listening=false;}
+                    if(s!=null){s.closed=true;s.listening=false;DeskLog.event(context,"REDE","Ligação DESK terminada: "+code);}
                     if(running.get())status("DESK desligada");
                 }
                 @Override public void onError(WebSocket c,Exception error){
@@ -131,6 +132,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
         if(!s.listening||!s.busy.compareAndSet(false,true))return;
         s.listening=false;
         byte[] pcm=s.pcm.toByteArray();s.pcm.reset();
+        DeskLog.event(context,"AUDIO","Pedido capturado: "+s.frames+" tramas; "+pcm.length+" bytes PCM");
         if(s.voice<3||pcm.length<6400){
             s.busy.set(false);
             status("Não foi detetado pedido de voz suficientemente longo");
@@ -141,15 +143,18 @@ public final class DeskVoiceGateway implements AutoCloseable {
                 if(s.closed||!c.isOpen())return;
                 status("A transcrever voz PT-PT…");
                 String heard=LumiCloudVoice.transcribe(context,prefs,pcm);
+                DeskLog.conversation(context,"UTILIZADOR",heard);
                 if(heard.isEmpty())throw new Exception("Áudio sem palavras");
                 status("Voz PT-PT reconhecida · a preparar resposta");
                 String answer=LumiCloudVoice.respond(context,prefs,heard);
+                DeskLog.conversation(context,"LUMI",answer);
                 if(answer.isEmpty())throw new Exception("Resposta de IA vazia");
                 status("A sintetizar Raquel Neural…");
                 byte[] speech=LumiCloudVoice.speak(context,prefs,answer);
                 if(!s.closed&&c.isOpen())playPcm(c,s,answer,speech);
             }catch(Exception e){
                 status("Conversa PT-PT: "+e.getMessage());
+                DeskLog.event(context,"ERRO",e.getClass().getSimpleName()+": "+e.getMessage());
             }finally{s.busy.set(false);}
         },"LumiDynamicConversation").start();
     }
@@ -170,6 +175,7 @@ public final class DeskVoiceGateway implements AutoCloseable {
         });
         SystemClock.sleep(240);stopSpeaking(c);
         status("Raquel PT-PT: "+n+" pacotes transmitidos");
+        DeskLog.event(context,"AUDIO","Resposta enviada: "+n+" tramas Opus");
     }
     private void demo(WebSocket c,Session s){
         int count=0;

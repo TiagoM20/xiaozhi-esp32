@@ -995,38 +995,17 @@ public final class MainActivity extends Activity {
                 }));
     }
     private void lumiDetails() {
-        LinearLayout c=detail();
-        c.addView(label("LUMI DESK",23,WHITE,true));
-        add(c,label("ESP32-S3 · Assistente de voz da casa",13,VIOLET,true),6);
-        add(c,label("Ligações de voz e comandos",12,MUTED,true),15);
-        add(c,label("Ligação MCP: "+mcpStatus(),14,
-            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),7);
-        add(c,label("O MCP permite controlar a TV e guardar ou procurar recordações, " +
-            "quando o agente da XiaoZhi chama as ferramentas.",12,MUTED,false),7);
-        add(c,label("Memórias guardadas: "+memories.count(),13,CYAN,true),9);
-        add(c,label("Diz «Lumi, lembra-te que…». A ferramenta só funciona " +
-            "com MCP associado e central ativa.",12,MUTED,false),6);
-
-        add(c,label("LUMI NO TAB 15",14,CYAN,true),19);
-        add(c,label("Versão local com microfone e texto: comandos reais " +
-            "da TV, Spotify, meteorologia, bateria e Google Find. " +
-            "A conversa livre continua no serviço XiaoZhi.",13,MUTED,false),7);
-        add(c,button("Abrir LUMI no tablet",true,()->
-            startActivity(new Intent(this,LumiTabletActivity.class))),11);
-        add(c,button("Escolher e ouvir voz PT-PT",false,()->
-            startActivity(new Intent(this,OfflineVoiceLabActivity.class))),8);
-
-        add(c,label("ENCONTRAR A LUMI DESK",14,VIOLET,true),19);
-        add(c,label("A resposta sonora «Olá, estou aqui» no ESP32 " +
-            "ainda não está disponível: necessita de um canal de comandos " +
-            "para o dispositivo físico, diferente do MCP usado para a TV. " +
-            "Não vou colocar um botão que finja reproduzir áudio.",13,MUTED,false),7);
-
-        add(c,button("LUMI CORE V12 · Testes de voz",true,()->
-            startActivity(new Intent(this,LumiCoreActivity.class))),12);
-        add(c,button("Configurar MCP da LUMI DESK",false,this::mcpSettings),8);
-        add(c,button("Diagnóstico do Hub",false,this::diagnostics),8);
-        add(stage,c,16);
+        SharedPreferences prefs=getSharedPreferences("hub",MODE_PRIVATE);
+        LinearLayout card=detail();
+        card.addView(label("LUMI DESK",23,WHITE,true));
+        add(card,label("Assistente de voz · ESP32-S3",13,VIOLET,false),5);
+        String state=prefs.getString("desk_gateway_state","Ainda sem diagnóstico");
+        add(card,label("Ponte de voz: "+state,13,MUTED,false),14);
+        add(card,button("Configurações",true,()->
+            startActivity(new Intent(this,LumiCoreActivity.class))),16);
+        add(card,button("Diagnóstico e histórico",false,()->
+            startActivity(new Intent(this,DeskLogActivity.class))),9);
+        add(stage,card,16);
     }
     private void diagnostics() {
         SharedPreferences p=getSharedPreferences("hub",MODE_PRIVATE);

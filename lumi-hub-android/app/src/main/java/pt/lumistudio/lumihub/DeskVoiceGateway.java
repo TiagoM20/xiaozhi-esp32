@@ -145,6 +145,8 @@ public final class DeskVoiceGateway implements AutoCloseable {
                 String heard=LumiCloudVoice.transcribe(context,prefs,pcm);
                 DeskLog.conversation(context,"UTILIZADOR",heard);
                 if(heard.isEmpty())throw new Exception("Áudio sem palavras");
+                if(!s.closed&&c.isOpen())c.send(new JSONObject()
+                    .put("type","stt").put("text",heard).toString());
                 status("Voz PT-PT reconhecida · a preparar resposta");
                 String answer=LumiCloudVoice.respond(context,prefs,heard);
                 DeskLog.conversation(context,"LUMI",answer);

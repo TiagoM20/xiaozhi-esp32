@@ -25,11 +25,12 @@ public final class LumiCoreActivity extends Activity {
     private LinearLayout panel;
     private SharedPreferences prefs;
     private int textPrimary, textMuted, textAccent;
+    private TextView credentialsLabel;
 
-    private void label(String value,int size,int color){
+    private TextView label(String value,int size,int color){
         TextView t=new TextView(this);
         t.setText(value);t.setTextSize(size);t.setTextColor(color);
-        t.setPadding(8,12,8,12);panel.addView(t);
+        t.setPadding(8,12,8,12);panel.addView(t);return t;
     }
     private void button(String text,Runnable action){
         Button b=new Button(this);b.setAllCaps(false);b.setText(text);
@@ -163,6 +164,13 @@ public final class LumiCoreActivity extends Activity {
         label("Endereço privado copiado. Não o publiques; contém a chave de emparelhamento.",
             13,textMuted);
     }
+    @Override protected void onResume(){
+        super.onResume();
+        if(credentialsLabel!=null)credentialsLabel.setText("Azure Speech: "+
+            (LumiSecrets.get(this,"azure").isEmpty()?"Por configurar":"Configurado")+
+            "  ·  OpenAI: "+
+            (LumiSecrets.get(this,"openai").isEmpty()?"Por configurar":"Configurado"));
+    }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         prefs=getSharedPreferences("hub",MODE_PRIVATE);
@@ -177,7 +185,7 @@ public final class LumiCoreActivity extends Activity {
         label("VOZ E INTELIGÊNCIA",15,textAccent);
         String azure=LumiSecrets.get(this,"azure").isEmpty()?"Por configurar":"Configurado";
         String openai=LumiSecrets.get(this,"openai").isEmpty()?"Por configurar":"Configurado";
-        label("Azure Speech: "+azure+"  ·  OpenAI: "+openai,13,textMuted);
+        credentialsLabel=label("Azure Speech: "+azure+"  ·  OpenAI: "+openai,13,textMuted);
         button("Configurar Raquel PT-PT e IA",()->
             startActivity(new Intent(this,LumiVoiceSetupActivity.class)));
 

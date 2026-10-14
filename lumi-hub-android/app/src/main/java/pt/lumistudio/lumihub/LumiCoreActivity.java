@@ -166,43 +166,47 @@ public final class LumiCoreActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         prefs=getSharedPreferences("hub",MODE_PRIVATE);
-        HubThemes.Palette palette=HubThemes.get(HubThemes.bounded(
-            prefs.getInt("hub_theme",0)));
+        HubThemes.Palette palette=HubThemes.get(HubThemes.bounded(prefs.getInt("hub_theme",0)));
         textPrimary=palette.text;textMuted=palette.muted;textAccent=palette.accent;
         ScrollView scroll=new ScrollView(this);
-        panel=new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(20,20,20,30);
-        panel.setBackgroundColor(palette.background);
+        panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(22,18,22,28);panel.setBackgroundColor(palette.background);
         scroll.addView(panel);setContentView(scroll);
-        label("LUMI CORE · V12",24,textPrimary);
-        label("Preparação da ligação entre memória, voz PT-PT e LUMI DESK.",15,textMuted);
-        label("Estado MCP: "+prefs.getString("mcp_state","Por configurar"),14,
-            textAccent);
-        try(MemoryDb db=new MemoryDb(this)){
-            label("Recordações locais: "+db.count(),16,textPrimary);
-        }
-        label("Já disponível: guardar e procurar memórias por MCP quando o agente usar " +
-            "as ferramentas. A conversa e a voz na DESK continuam no XiaoZhi atual.",14,textMuted);
+
+        label("LUMI DESK · Configurações",22,textPrimary);
+        label("VOZ E INTELIGÊNCIA",15,textAccent);
+        String azure=LumiSecrets.get(this,"azure").isEmpty()?"Por configurar":"Configurado";
+        String openai=LumiSecrets.get(this,"openai").isEmpty()?"Por configurar":"Configurado";
+        label("Azure Speech: "+azure+"  ·  OpenAI: "+openai,13,textMuted);
         button("Configurar Raquel PT-PT e IA",()->
             startActivity(new Intent(this,LumiVoiceSetupActivity.class)));
-        label("Conversação PT-PT: precisa de Azure Speech e chave de IA; chamadas " +
-            "externas podem ter custos. Sem credenciais fica a demonstração.",13,textMuted);
-        button("Ouvir e escolher voz PT-PT no tablet",()->
-            startActivity(new Intent(this,OfflineVoiceLabActivity.class)));
-        button("Abrir assistente local do tablet",()->
-            startActivity(new Intent(this,LumiTabletActivity.class)));
-        label("Próxima ligação: ponte WebSocket Opus do tablet para a DESK, " +
-            "testada antes de qualquer mudança do firmware.",13,textMuted);
-        label("PONTE DE VOZ (EXPERIMENTAL)",16,textAccent);
-        label("Este modo envia apenas uma frase previamente gravada em Opus para a " +
-            "Waveshare, não responde ainda a perguntas. Só ativar quando a DESK " +
-            "tiver um backup verificado e o endereço original do servidor guardado.",13,textMuted);
-        button("Ativar ponte de testes no tablet",()->toggleBridge(true));
-        button("Parar ponte de testes",()->toggleBridge(false));
-        button("Copiar endereço OTA local para emparelhar",this::copyOta);
-        button("Testar ligação de áudio no próprio tablet",this::localBridgeTest);
-        button("Ver estado da ponte",this::showBridge);
+
+        label("LIGAÇÕES",15,textAccent);
+        label("Ponte: "+prefs.getString("desk_gateway_state","Por configurar"),13,textMuted);
+        button("Ativar ponte de voz",()->toggleBridge(true));
+        button("Desativar ponte de voz",()->toggleBridge(false));
+
+        label("FERRAMENTAS E MEMÓRIAS",15,textAccent);
+        label("MCP: "+prefs.getString("mcp_state","Por configurar"),13,textMuted);
+        button("Configurar integração MCP",()->
+            startActivity(new Intent(this,McpSettingsActivity.class)));
+
+        label("AVANÇADO",15,textAccent);
+        final LinearLayout advanced=new LinearLayout(this);
+        advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(android.view.View.GONE);
+        button("Mostrar / ocultar testes",()->advanced.setVisibility(
+            advanced.getVisibility()==android.view.View.VISIBLE?
+                android.view.View.GONE:android.view.View.VISIBLE));
+        LinearLayout old=panel;
+        panel=advanced;
+        label("Os testes abaixo não atualizam o firmware da DESK.",12,textMuted);
+        button("Copiar endereço OTA local",this::copyOta);
+        button("Testar ligação áudio",this::localBridgeTest);
+        button("Consultar estado da ponte",this::showBridge);
+        panel=old;panel.addView(advanced);
+
+        button("Diagnóstico e histórico",()->
+            startActivity(new Intent(this,DeskLogActivity.class)));
         button("Voltar",this::finish);
     }
 }

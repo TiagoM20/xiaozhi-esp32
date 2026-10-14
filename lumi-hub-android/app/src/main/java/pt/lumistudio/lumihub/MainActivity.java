@@ -261,7 +261,7 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(currentPalette.nav);
         getWindow().setNavigationBarColor(BG);
         if(Build.VERSION.SDK_INT>=26){
-            int flags=themeId==2?
+            int flags=(themeId==2 || themeId==5 || themeId==7 || themeId==9)?
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR:0;
             getWindow().getDecorView().setSystemUiVisibility(flags);
         }

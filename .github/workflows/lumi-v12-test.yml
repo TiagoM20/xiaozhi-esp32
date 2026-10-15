@@ -197,3 +197,4 @@ jobs:
             Não contém credenciais e não altera firmware da DESK.
             Versão experimental ainda por testar com hardware.
           files: dist/LUMI-CORE-Windows.exe
+

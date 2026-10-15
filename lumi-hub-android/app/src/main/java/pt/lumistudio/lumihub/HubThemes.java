@@ -3,12 +3,13 @@ package pt.lumistudio.lumihub;
 import android.graphics.Color;
 
 /**
- * Cinco temas locais do LUMI Hub. Nenhuma alteracao depende da rede,
+ * Dez temas locais do LUMI Hub. Nenhuma alteracao depende da rede,
  * os temas ficam persistidos apenas em SharedPreferences.
  */
 public final class HubThemes {
     public static final String[] NAMES = {
-        "LUMI Azul", "Escuro", "Claro", "Colorido", "Aurora"
+        "LUMI Azul", "Escuro", "Claro", "Colorido", "Aurora",
+        "Areia", "Floresta", "Rosa Névoa", "Terracota", "Minimal"
     };
     public static final class Palette {
         public final int background, panel, bright, text, muted, accent, gold, violet, green, stroke;
@@ -61,6 +62,36 @@ public final class HubThemes {
                     "#544A78","#1D1737","#513C82","#364C91","#247B8B",
                     "#413668","#2B486E","#20556D","#FFFFFF","#FFFFFF",
                     "#7A77B6","#2A2452","#503E80");
+            case 5: // Areia
+                return new Palette("#F6F2EB","#FFFFFF","#EEE4D5","#362D27","#73675B",
+                    "#9A694D","#B88E4D","#9D829E","#527A66","#DBCEBF",
+                    "#EFE7DA","#DCCCB7","#D8B7A0","#AF886B","#E7D5C1",
+                    "#D8BFA6","#C6A98E","#32251E","#573B2E","#BDAC9B",
+                    "#F9F4EB","#DBCAB6");
+            case 6: // Floresta
+                return new Palette("#0C1917","#182D29","#23453E","#F0F7F2","#A3C3B5",
+                    "#6CD9AC","#E7C678","#B9ADE8","#90D4B0","#426A5C",
+                    "#102620","#244A3D","#286A51","#285747","#234F43",
+                    "#1D6052","#19443A","#FFFFFF","#E6FFF1","#477C69",
+                    "#143A32","#286A51");
+            case 7: // Rosa Névoa
+                return new Palette("#FBF7F7","#FFFFFF","#F3E4E9","#3F3039","#806D77",
+                    "#AD6685","#C79755","#9876A0","#608B75","#E6D2DC",
+                    "#F5E7ED","#E7C6D4","#C6ADC7","#B68B9E","#F1D9E2",
+                    "#E4C3D3","#D8B3C7","#3F2733","#613D50","#D8BFCA",
+                    "#F8EBF1","#E4C4D3");
+            case 8: // Terracota
+                return new Palette("#241916","#382823","#533C34","#FFF5E9","#D4B8A8",
+                    "#EEA475","#EBC48C","#D8A3B5","#B7C9A1","#75544A",
+                    "#30221D","#8C4934","#B66B48","#A78A62","#854B37",
+                    "#9A5C42","#6F3F36","#FFFFFF","#FFF6EF","#A87662",
+                    "#483028","#A66347");
+            case 9: // Minimal
+                return new Palette("#F0F3F4","#FFFFFF","#DDE5E8","#1C2C32","#607177",
+                    "#477789","#BE9459","#8290A6","#518077","#C9D6DB",
+                    "#E5EDF0","#AACAD4","#93B1BD","#648E9D","#CFDFE5",
+                    "#B9D0D7","#ADC5CB","#162A32","#2C4A54","#A9C0CB",
+                    "#E4EDF0","#BAD1D8");
             default: // painel azul v9
                 return new Palette("#0C121F","#182030","#222C3E","#F5F8FF",
                     "#A2AFC3","#72E4EF","#FFBB77","#AE9AFB","#8BDFAD",

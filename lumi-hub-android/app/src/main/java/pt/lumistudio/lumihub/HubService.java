@@ -17,6 +17,8 @@ public final class HubService extends Service {
     private static final String CHANNEL = "lumi_hub_service";
     private BroadcastReceiver batteryReceiver;
     private XiaozhiMcpBridge mcpBridge;
+    private DeskVoiceGateway deskGateway;
+    private LumiCoreSyncServer coreSync;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -56,13 +58,53 @@ public final class HubService extends Service {
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", true).apply();
         mcpBridge = new XiaozhiMcpBridge(this);
         mcpBridge.start();
+        syncCoreConnection();
+        if (getSharedPreferences("hub",MODE_PRIVATE)
+                .getBoolean("desk_gateway_enabled",false)) {
+            deskGateway = new DeskVoiceGateway(this);
+            deskGateway.start();
+        }
+    }
+
+    /** Configura apenas a porta CORE, sem derrubar a ponte da DESK ou a central. */
+    private void syncCoreConnection() {
+        boolean enabled=getSharedPreferences("hub",MODE_PRIVATE)
+            .getBoolean("lumi_core_sync_enabled",false);
+        if(enabled) {
+            if(coreSync!=null)return;
+            try {
+                coreSync=new LumiCoreSyncServer(this);
+                coreSync.start();
+                getSharedPreferences("hub",MODE_PRIVATE).edit()
+                    .putBoolean("lumi_core_sync_running",true)
+                    .putString("lumi_core_sync_error","").apply();
+            }catch(Exception error){
+                if(coreSync!=null)coreSync.close();
+                coreSync=null;
+                getSharedPreferences("hub",MODE_PRIVATE).edit()
+                    .putBoolean("lumi_core_sync_running",false)
+                    .putString("lumi_core_sync_error",
+                        error.getClass().getSimpleName()).apply();
+                DeskLog.event(this,"CORE","Servidor 8770: falha "+error.getClass().getSimpleName());
+            }
+        }else{
+            if(coreSync!=null){coreSync.close();coreSync=null;}
+            getSharedPreferences("hub",MODE_PRIVATE).edit()
+                .putBoolean("lumi_core_sync_running",false)
+                .putString("lumi_core_sync_error","").apply();
+        }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        syncCoreConnection();
         return START_STICKY;
     }
 
     @Override public void onDestroy() {
+        if (coreSync != null) {coreSync.close();coreSync=null;}
+        getSharedPreferences("hub",MODE_PRIVATE).edit()
+            .putBoolean("lumi_core_sync_running",false).apply();
+        if (deskGateway != null) deskGateway.close();
         if (mcpBridge != null) mcpBridge.stop();
         if (batteryReceiver != null) unregisterReceiver(batteryReceiver);
         getSharedPreferences("hub", MODE_PRIVATE).edit().putBoolean("service_running", false).apply();

@@ -98,7 +98,8 @@ public final class XiaozhiMcpBridge {
                         } else if ("tools/call".equals(method)) {
                             JSONObject params = request.optJSONObject("params");
                             String tool = params == null ? "" : params.optString("name", "");
-                            execute(this, id, tool);
+                            execute(this, id, tool, params == null ?
+                                null : params.optJSONObject("arguments"));
                         } else {
                             error(this, id, -32601, "Metodo MCP indisponivel");
                         }
@@ -135,6 +136,10 @@ public final class XiaozhiMcpBridge {
         list.put(tool("home.tv_youtube", "Abre o YouTube na TV da Sala."));
         list.put(tool("home.tv_estado", "Consulta o ultimo diagnostico conhecido da TV da Sala, nao o estado em tempo real."));
         list.put(tool("home.hub_estado", "Consulta o estado da central LUMI Hub e bateria do tablet."));
+        list.put(memoryTool("lumi.memoria_guardar",
+            "Guarda recordacoes apenas quando a pessoa pedir explicitamente que a LUMI se lembre de algo.",true));
+        list.put(memoryTool("lumi.memoria_procurar",
+            "Recupera recordacoes autorizadas que ja estao no LUMI HUB, para retomar conversas e historias.",false));
         return list;
     }
 
@@ -146,6 +151,18 @@ public final class XiaozhiMcpBridge {
                 .put("type", "object")
                 .put("properties", new JSONObject())
                 .put("additionalProperties", false));
+    }
+
+    private static JSONObject memoryTool(String name,String description,boolean save) throws Exception {
+        JSONObject props=new JSONObject();
+        props.put(save?"titulo":"tema",new JSONObject().put("type","string"));
+        if(save)props.put("detalhe",new JSONObject().put("type","string"));
+        JSONArray required=new JSONArray().put(save?"titulo":"tema");
+        if(save)required.put("detalhe");
+        return new JSONObject().put("name",name).put("description",description)
+            .put("inputSchema",new JSONObject().put("type","object")
+                .put("properties",props).put("required",required)
+                .put("additionalProperties",false));
     }
 
     private static void reply(WebSocketClient ws, Object id, JSONObject result) {
@@ -173,7 +190,37 @@ public final class XiaozhiMcpBridge {
         } catch (Exception ignored) {}
     }
 
-    private void execute(WebSocketClient ws, Object id, String tool) {
+    private void execute(WebSocketClient ws, Object id, String tool, JSONObject args) {
+        if("lumi.memoria_guardar".equals(tool)){
+            String title=args==null?"":args.optString("titulo","").trim();
+            String detail=args==null?"":args.optString("detalhe","").trim();
+            if(title.isEmpty()||detail.isEmpty()||title.length()>100||detail.length()>1500){
+                result(ws,id,"Titulo ou conteudo invalido.",true);return;
+            }
+            try(MemoryDb db=new MemoryDb(context)){
+                boolean saved=db.saveIfMissing(title,detail);
+                result(ws,id,saved?"Recordacao guardada: "+title:
+                    "Esta recordacao ja estava guardada: "+title,false);
+            }catch(Exception ex){result(ws,id,"Falha ao guardar a recordacao.",true);}
+            return;
+        }
+        if("lumi.memoria_procurar".equals(tool)){
+            String q=args==null?"":args.optString("tema","").trim();
+            if(q.isEmpty()||q.length()>100){result(ws,id,"Indica um tema valido.",true);return;}
+            StringBuilder text=new StringBuilder();
+            try(MemoryDb db=new MemoryDb(context)){
+                String term=q.toLowerCase(java.util.Locale.ROOT);int count=0;
+                for(MemoryDb.Item item:db.all()){
+                    if(!item.title.toLowerCase(java.util.Locale.ROOT).contains(term)
+                      && !item.detail.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
+                    if(count++>=5)break;
+                    if(text.length()>0)text.append("\n");
+                    text.append(item.title).append(": ").append(item.detail);
+                }
+                result(ws,id,text.length()==0?"Sem memorias sobre esse tema.":text.toString(),false);
+            }catch(Exception ex){result(ws,id,"Falha ao consultar as memorias.",true);}
+            return;
+        }
         if ("home.hub_estado".equals(tool)) {
             int battery = prefs.getInt("battery", -1);
             result(ws, id, "LUMI Hub ativo. Bateria do Tab 15: " +

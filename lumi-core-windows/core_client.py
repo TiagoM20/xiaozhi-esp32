@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -58,6 +59,30 @@ def validate(ip, key):
         raise ValueError("O código de emparelhamento deve ter 64 caracteres hexadecimais.")
 
 
+def diagnose_port(ip):
+    """Diagnóstico de rede seguro, sem enviar chaves nem ler dados do tablet."""
+    import ipaddress
+    host = str(ipaddress.IPv4Address(ip))
+    lines = ["Destino: " + host + ":8770"]
+    try:
+        with socket.create_connection((host, 8770), timeout=3.0) as probe:
+            lines.append("IP utilizado pelo Windows: " + probe.getsockname()[0])
+            lines.append("Porta TCP 8770: ABERTA (há um servidor acessível).")
+            lines.append("Se o emparelhamento falhar, verificar o código e a resposta do HUB.")
+    except ConnectionRefusedError:
+        lines.append("Porta TCP 8770: LIGAÇÃO RECUSADA.")
+        lines.append("O dispositivo responde na rede, mas não há serviço acessível nesta porta.")
+        lines.append("No HUB confirmar: Servidor TCP 8770: ATIVO.")
+    except (socket.timeout, TimeoutError):
+        lines.append("Porta TCP 8770: TEMPO ESGOTADO.")
+        lines.append("O Windows não conseguiu contactar o tablet; verificar isolamento Wi-Fi, VPN ou firewall.")
+    except OSError as error:
+        lines.append("Porta TCP 8770: INACESSÍVEL (" + type(error).__name__ + ", errno " +
+                     str(getattr(error, "errno", "?")) + ").")
+        lines.append("Confirmar que o PC e o Blackview comunicam na mesma rede.")
+    return "\\n".join(lines)
+
+
 class LumiClient:
     def __init__(self, ip, key):
         validate(ip, key)
@@ -87,19 +112,28 @@ class LumiClient:
             headers={"Content-Type": "application/json", "Cache-Control": "no-store"},
             method="POST",
         )
+        # A ligação é exclusivamente local. Não usar proxy HTTP do Windows
+        # nem as variáveis HTTP_PROXY/HTTPS_PROXY de outros programas.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
-            with urllib.request.urlopen(req, timeout=9) as response:
+            with opener.open(req, timeout=9) as response:
                 if response.status != 200:
-                    raise ConnectionError("O HUB recusou a operação.")
+                    raise ValueError("O HUB devolveu uma resposta inesperada.")
                 body = response.read(262145)
                 if len(body) > 262144:
-                    raise ConnectionError("Resposta demasiado longa.")
+                    raise ValueError("Resposta do HUB demasiado longa.")
         except urllib.error.HTTPError as error:
             if error.code == 403:
-                raise ConnectionError("Emparelhamento inválido ou recusado. Verifica o código no tablet.") from None
+                raise ConnectionError("A ligação ao tablet chegou ao servidor, mas este recusou a autenticação. Verificar emparelhamento e hora do tablet.") from None
             raise ConnectionError("Erro HTTP " + str(error.code)) from None
-        except (OSError, TimeoutError) as error:
-            raise ConnectionError("Sem ligação ao tablet. Verifica IP, Wi-Fi e se a ligação Windows está ativa.") from error
+        except ConnectionRefusedError as error:
+            raise ConnectionError("Ligação recusada: o serviço LUMI CORE não está acessível em " + self.ip + ":8770. No tablet, confirmar 'Servidor TCP 8770: ATIVO'.") from error
+        except (TimeoutError, socket.timeout) as error:
+            raise ConnectionError("Tempo de ligação esgotado em " + self.ip + ":8770. Possível isolamento Wi-Fi, VPN, firewall ou serviço parado.") from error
+        except OSError as error:
+            raise ConnectionError("Falha de rede em " + self.ip + ":8770 (" +
+                                  type(error).__name__ + "; código " +
+                                  str(getattr(error, "errno", "?")) + ").") from error
         response_envelope = json.loads(body.decode("utf-8"))
         plain = AESGCM(self.key).decrypt(
             base64.b64decode(response_envelope["n"], validate=True),

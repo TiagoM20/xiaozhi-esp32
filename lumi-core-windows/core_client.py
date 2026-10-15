@@ -80,7 +80,7 @@ def diagnose_port(ip):
         lines.append("Porta TCP 8770: INACESSÍVEL (" + type(error).__name__ + ", errno " +
                      str(getattr(error, "errno", "?")) + ").")
         lines.append("Confirmar que o PC e o Blackview comunicam na mesma rede.")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 class LumiClient:

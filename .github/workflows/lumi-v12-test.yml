@@ -93,19 +93,19 @@ jobs:
         if: env.LUMI_SIGN == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.12.3
-          name: LUMI HUB V12.3 - Interface e diagnóstico da DESK
+          tag_name: lumi-hub-v0.12.4
+          name: LUMI HUB V12.4 - Ligação ao LUMI CORE Windows
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: true
           make_latest: false
           body: |
-            LUMI HUB 0.12.3, atualização experimental assinada sobre a V12.2.
-            LUMI DESK simplificada: Configurações e Diagnóstico/histórico.
+            LUMI HUB 0.12.4, atualização experimental assinada sobre a V12.3.
+            LUMI CORE Windows: emparelhamento LAN por autorização explícita no tablet e sincronização cifrada de definições.
             Diagnóstico local privado com eventos, transcrições, respostas e exportação .txt.
             Integração MCP movida para Configurações e testes de voz recolhidos na área avançada.
             Cinco novos temas (Areia, Floresta, Rosa Névoa, Terracota, Minimal).
             Mantém os cinco temas originais, memórias, dispositivos e atualizações pelo HUB.
-            Azure Speech e OpenAI continuam dependentes de configuração no tablet.
+            Azure Speech e OpenAI podem ser configurados no tablet ou pelo LUMI CORE Windows após emparelhamento.\n            Chaves cloud não são incluídas em GitHub e não podem ser lidas de volta pelo Windows.
             Não atualiza o firmware da Waveshare nem altera os 21 GIFs.
             Versão de testes: conversa real e áudio sem falhas continuam por validar em hardware.
           files: lumi-hub-android/app/build/outputs/apk/release/LUMI-HUB-V12-TESTE-ASSINADO.apk

@@ -4,9 +4,9 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
-from core_client import LumiClient, load_pairing, save_pairing, forget_pairing
+from core_client import LumiClient, load_pairing, save_pairing, forget_pairing, diagnose_port
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 THEMES = ["LUMI Azul", "Escuro", "Claro", "Colorido", "Aurora",
           "Areia", "Floresta", "Rosa Névoa", "Terracota", "Minimal"]
 BG, CARD, TEXT, MUTED, ACCENT = "#101724", "#1d293b", "#edf4ff", "#b1c3d7", "#72e4ef"
@@ -115,6 +115,7 @@ class LumiCore(tk.Tk):
         row.pack(fill="x")
         self._button(row, "Emparelhar e verificar", self.pair_and_test, True)
         self._button(row, "Verificar ligação guardada", self.refresh_status)
+        self._button(row, "Diagnosticar rede", self.diagnose_connection)
         self._button(row, "Esquecer este PC", self.forget)
         self._label(card, "No tablet: LUMI DESK → Configurações → Emparelhar LUMI CORE Windows."
                     "\nAtiva a ligação, copia o código e introduz o IP nesta janela."
@@ -250,6 +251,23 @@ class LumiCore(tk.Tk):
             "OpenAI configurado: " + yes(status.get("openai_configured")) + "\n" +
             "MCP configurado: " + yes(status.get("mcp_configured"))
         )
+
+    def diagnose_connection(self):
+        ip = self.pair_ip.get().strip()
+        if not ip:
+            messagebox.showerror("LUMI CORE", "Indica primeiro o IP do Blackview.")
+            return
+        def finished(report):
+            self.state_text.set(report)
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(report)
+                self.status_message.set("Diagnóstico copiado para a área de transferência.")
+            except Exception:
+                self.status_message.set("Diagnóstico concluído.")
+            messagebox.showinfo("Diagnóstico de rede", report + "\\n\\nPodes colar este resultado no ChatGPT. Não inclui chaves.")
+        self._run_job("A testar ligação direta ao tablet…",
+                      lambda: diagnose_port(ip), finished)
 
     def refresh_status(self):
         if not self.client:

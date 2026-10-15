@@ -93,13 +93,13 @@ jobs:
         if: env.LUMI_SIGN == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-hub-v0.12.4
-          name: LUMI HUB V12.4 - Ligação ao LUMI CORE Windows
+          tag_name: lumi-hub-v0.12.5
+          name: LUMI HUB V12.5 - Ligação ao LUMI CORE Windows
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: true
           make_latest: false
           body: |
-            LUMI HUB 0.12.4, atualização experimental assinada sobre a V12.3.
+            LUMI HUB 0.12.5, atualização experimental assinada sobre a V12.3.
             LUMI CORE Windows: emparelhamento LAN por autorização explícita no tablet e sincronização cifrada de definições.
             Diagnóstico local privado com eventos, transcrições, respostas e exportação .txt.
             Integração MCP movida para Configurações e testes de voz recolhidos na área avançada.
@@ -180,19 +180,19 @@ jobs:
           if (!(Test-Path "dist/LUMI-CORE-Windows.exe")) { throw "Falta o executável" }
       - uses: actions/upload-artifact@v4
         with:
-          name: LUMI-CORE-Windows-v0.1.0-TESTE
+          name: LUMI-CORE-Windows-v0.1.1-TESTE
           path: dist/LUMI-CORE-Windows.exe
           retention-days: 14
       - name: Publicar LUMI CORE Windows
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-core-windows-v0.1.0
-          name: LUMI CORE Windows v0.1.0 - Painel LAN experimental
+          tag_name: lumi-core-windows-v0.1.1
+          name: LUMI CORE Windows v0.1.1 - Painel LAN experimental
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: true
           make_latest: false
           body: |
-            Primeiro painel Windows do LUMI CORE, integrado com a LUMI HUB Android 0.12.4.
+            Primeiro painel Windows do LUMI CORE, integrado com a LUMI HUB Android 0.12.5.
             Emparelhamento cifrado, sincronização de configuração, dispositivos e diagnóstico.
             Não contém credenciais e não altera firmware da DESK.
             Versão experimental ainda por testar com hardware.

@@ -39,14 +39,14 @@ jobs:
           if (!(Test-Path "dist/LUMI-CORE-Windows.exe")) { throw "Executável em falta" }
       - uses: actions/upload-artifact@v4
         with:
-          name: LUMI-CORE-Windows-v0.1.0-TESTE
+          name: LUMI-CORE-Windows-v0.1.1-TESTE
           path: dist/LUMI-CORE-Windows.exe
           retention-days: 14
       - name: Publicar prerelease Windows
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-core-windows-v0.1.0
-          name: LUMI CORE Windows v0.1.0 - Teste de sincronização local
+          tag_name: lumi-core-windows-v0.1.1
+          name: LUMI CORE Windows v0.1.1 - Teste de sincronização local
           target_commitish: feature/lumi-v12-hub-desk-20261013
           prerelease: true
           make_latest: false

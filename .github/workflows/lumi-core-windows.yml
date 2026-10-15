@@ -1,0 +1,60 @@
+name: LUMI CORE - Windows EXE
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-v12-hub-desk-20261013]
+    paths:
+      - 'lumi-core-windows/**'
+      - '.github/workflows/lumi-core-windows.yml'
+concurrency:
+  group: lumi-core-win-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+      - name: Instalar dependências
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r lumi-core-windows/requirements.txt
+      - name: Verificar sintaxe e imports
+        shell: pwsh
+        run: |
+          python -m compileall -q lumi-core-windows
+          python -c "import sys;sys.path.insert(0, 'lumi-core-windows');import core_client;import cryptography;import win32crypt;print('Imports OK')"
+      - name: Compilar aplicativo Windows
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name LUMI-CORE-Windows --hidden-import win32crypt lumi-core-windows/lumi_core.py
+          if (!(Test-Path "dist/LUMI-CORE-Windows.exe")) { throw "Executável em falta" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-CORE-Windows-v0.1.0-TESTE
+          path: dist/LUMI-CORE-Windows.exe
+          retention-days: 14
+      - name: Publicar prerelease Windows
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-core-windows-v0.1.0
+          name: LUMI CORE Windows v0.1.0 - Teste de sincronização local
+          target_commitish: feature/lumi-v12-hub-desk-20261013
+          prerelease: true
+          make_latest: false
+          body: |
+            Primeiro painel LUMI CORE para Windows.
+            Requer LUMI HUB Android >= 0.12.4 no Blackview.
+            Permite emparelhar, configurar Azure/OpenAI, IP/MAC da TV, tema e exportar logs.
+            Envio cifrado AES-256-GCM; segredo de emparelhamento guardado com Windows DPAPI.
+            Não instala firmware na DESK; sem acesso automático fora da rede local.
+            Versão experimental por validar em hardware.
+          files: dist/LUMI-CORE-Windows.exe

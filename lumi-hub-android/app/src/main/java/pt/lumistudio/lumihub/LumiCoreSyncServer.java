@@ -111,10 +111,6 @@ public final class LumiCoreSyncServer implements AutoCloseable {
             String nonce=envelope.getString("n");
             byte[] iv=Base64.decode(nonce,Base64.NO_WRAP);
             if(iv.length!=12)throw new Exception("IV inválido");
-            synchronized(nonces){
-                if(!nonces.add(nonce))throw new Exception("Pedido repetido");
-                if(nonces.size()>1000)nonces.clear();
-            }
             String secret=pairingKey(context);
             byte[] key=hex(secret);
             Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
@@ -125,6 +121,11 @@ public final class LumiCoreSyncServer implements AutoCloseable {
             long time=payload.optLong("ts",0);
             if(Math.abs(System.currentTimeMillis()/1000L-time)>300)
                 throw new Exception("Relógios dessincronizados");
+            synchronized(nonces){
+                if(nonces.contains(nonce))throw new Exception("Pedido repetido");
+                if(nonces.size()>=1000)nonces.clear();
+                nonces.add(nonce);
+            }
             String cmd=payload.optString("cmd");
             JSONObject response=new JSONObject().put("ok",true).put("cmd",cmd).put("request",nonce);
             if("status".equals(cmd))response.put("data",getStatus());
@@ -195,6 +196,11 @@ public final class LumiCoreSyncServer implements AutoCloseable {
         if(update.has("tv_ip")&&!update.getString("tv_ip").isEmpty()&&
                 !update.getString("tv_ip").matches("([0-9]{1,3}\\.){3}[0-9]{1,3}"))
             throw new Exception("IP inválido");
+        if(update.has("tv_ip")&&!update.getString("tv_ip").isEmpty()){
+            String[] octets=update.getString("tv_ip").split("\\.");
+            if(octets.length!=4)throw new Exception("IP inválido");
+            for(String octet:octets)if(Integer.parseInt(octet)>255)throw new Exception("IP inválido");
+        }
         if(update.has("tv_mac")&&!update.getString("tv_mac").isEmpty()&&
                 !update.getString("tv_mac").matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}"))
             throw new Exception("MAC inválido");

@@ -18,6 +18,7 @@ public final class HubService extends Service {
     private BroadcastReceiver batteryReceiver;
     private XiaozhiMcpBridge mcpBridge;
     private DeskVoiceGateway deskGateway;
+    private LumiCoreSyncServer coreSync;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -58,6 +59,13 @@ public final class HubService extends Service {
         mcpBridge = new XiaozhiMcpBridge(this);
         mcpBridge.start();
         if (getSharedPreferences("hub",MODE_PRIVATE)
+                .getBoolean("lumi_core_sync_enabled",false)) {
+            coreSync=new LumiCoreSyncServer(this);
+            try{coreSync.start();}catch(Exception error){
+                DeskLog.event(this,"CORE","Não foi possível abrir porta LAN 8770");
+            }
+        }
+        if (getSharedPreferences("hub",MODE_PRIVATE)
                 .getBoolean("desk_gateway_enabled",false)) {
             deskGateway = new DeskVoiceGateway(this);
             deskGateway.start();
@@ -69,6 +77,7 @@ public final class HubService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (coreSync != null) coreSync.close();
         if (deskGateway != null) deskGateway.close();
         if (mcpBridge != null) mcpBridge.stop();
         if (batteryReceiver != null) unregisterReceiver(batteryReceiver);

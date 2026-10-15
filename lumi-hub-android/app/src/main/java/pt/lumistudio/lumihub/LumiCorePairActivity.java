@@ -31,9 +31,11 @@ public final class LumiCorePairActivity extends Activity {
     }
     private void restartCentral(){
         Intent intent=new Intent(this,HubService.class);
-        stopService(intent);
+        // Requer onStartCommand no serviço existente para aplicar a nova opção.
+        // Não usar stopService(): interromperia a ponte de áudio da DESK.
         boolean required=prefs.getBoolean("lumi_core_sync_enabled",false)||
             prefs.getBoolean("desk_gateway_enabled",false)||
+            prefs.getBoolean("service_running",false)||
             !prefs.getString("mcp_endpoint","").isEmpty();
         if(required){
             try{
@@ -45,7 +47,11 @@ public final class LumiCorePairActivity extends Activity {
     private void refresh(){
         String ip=LumiCoreSyncServer.localIp();
         boolean active=prefs.getBoolean("lumi_core_sync_enabled",false);
-        status.setText("Ligação Windows: "+(active?"ativada":"desativada")+
+        boolean listening=prefs.getBoolean("lumi_core_sync_running",false);
+        String error=prefs.getString("lumi_core_sync_error","");
+        status.setText("Ligação Windows: "+(active?"autorizada":"desativada")+
+            "\nServidor TCP 8770: "+(listening?"ATIVO":active?"NÃO INICIADO":"desligado")+
+            (error.isEmpty()?"":" · "+error)+
             "\nEndereço do tablet: "+(ip==null?"Sem IP Wi-Fi":ip)+
             "\nPorta local: 8770"+
             "\nChave de emparelhamento: "+(active?"gerada neste tablet":"inativa"));
@@ -66,6 +72,7 @@ public final class LumiCorePairActivity extends Activity {
             prefs.edit().putBoolean("lumi_core_sync_enabled",true).commit();
             LumiCoreSyncServer.pairingKey(this);
             restartCentral();refresh();
+            status.postDelayed(this::refresh,1200);
         });
         button("Copiar código privado de emparelhamento",()->{
             if(!prefs.getBoolean("lumi_core_sync_enabled",false)){

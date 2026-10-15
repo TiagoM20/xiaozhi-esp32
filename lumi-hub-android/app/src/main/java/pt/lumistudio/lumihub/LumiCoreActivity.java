@@ -40,7 +40,7 @@ public final class LumiCoreActivity extends Activity {
         prefs.edit().putBoolean("desk_gateway_enabled",on).apply();
         Intent service=new Intent(this,HubService.class);
         stopService(service);
-        if(on||!prefs.getString("mcp_endpoint","").isEmpty()){
+        if(on||prefs.getBoolean("lumi_core_sync_enabled",false)||!prefs.getString("mcp_endpoint","").isEmpty()){
             try{
                 if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
                 else startService(service);

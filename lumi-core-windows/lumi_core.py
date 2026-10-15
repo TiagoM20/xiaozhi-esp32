@@ -265,7 +265,7 @@ class LumiCore(tk.Tk):
                 self.status_message.set("Diagnóstico copiado para a área de transferência.")
             except Exception:
                 self.status_message.set("Diagnóstico concluído.")
-            messagebox.showinfo("Diagnóstico de rede", report + "\\n\\nPodes colar este resultado no ChatGPT. Não inclui chaves.")
+            messagebox.showinfo("Diagnóstico de rede", report + "\n\nPodes colar este resultado no ChatGPT. Não inclui chaves.")
         self._run_job("A testar ligação direta ao tablet…",
                       lambda: diagnose_port(ip), finished)
 

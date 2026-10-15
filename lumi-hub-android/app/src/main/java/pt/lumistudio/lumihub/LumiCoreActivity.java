@@ -199,6 +199,10 @@ public final class LumiCoreActivity extends Activity {
         button("Configurar integração MCP",()->
             startActivity(new Intent(this,McpSettingsActivity.class)));
 
+        label("GESTÃO PELO WINDOWS",15,textAccent);
+        button("Emparelhar LUMI CORE Windows",()->
+            startActivity(new Intent(this,LumiCorePairActivity.class)));
+
         label("AVANÇADO",15,textAccent);
         final LinearLayout advanced=new LinearLayout(this);
         advanced.setOrientation(LinearLayout.VERTICAL);advanced.setVisibility(android.view.View.GONE);

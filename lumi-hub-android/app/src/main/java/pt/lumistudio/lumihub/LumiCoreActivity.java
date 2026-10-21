@@ -39,8 +39,10 @@ public final class LumiCoreActivity extends Activity {
     private void toggleBridge(boolean on){
         prefs.edit().putBoolean("desk_gateway_enabled",on).apply();
         Intent service=new Intent(this,HubService.class);
-        stopService(service);
-        if(on||prefs.getBoolean("lumi_core_sync_enabled",false)||!prefs.getString("mcp_endpoint","").isEmpty()){
+        // onStartCommand aplica a alteração sem desligar o CORE nem perder áudio.
+        if(on||prefs.getBoolean("service_running",false)||
+            prefs.getBoolean("lumi_core_sync_enabled",false)||
+            !prefs.getString("mcp_endpoint","").isEmpty()){
             try{
                 if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
                 else startService(service);

@@ -1,0 +1,54 @@
+name: LUMI Gemini - Diagnostico Arduino Isolado
+
+on:
+  push:
+    branches:
+      - experiment/lumi-gemini-api-check-20261021
+    paths:
+      - 'experiments/lumi-gemini-diagnostico/**'
+      - '.github/workflows/lumi-gemini-diagnostico.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compilar-diagnostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Obter codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar PlatformIO
+        run: python -m pip install "platformio==6.1.18"
+
+      - name: Compilar Arduino ESP32-S3 (sem flash)
+        run: python -m platformio run -d experiments/lumi-gemini-diagnostico
+
+      - name: Validar e preparar binarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR=experiments/lumi-gemini-diagnostico/.pio/build/lumi_gemini_diagnostico
+          test -s "$DIR/firmware.bin"
+          test -s "$DIR/bootloader.bin"
+          test -s "$DIR/partitions.bin"
+          mkdir -p firmware-lumi-gemini-diagnostico
+          cp "$DIR/firmware.bin" firmware-lumi-gemini-diagnostico/LUMI-Gemini-Diagnostico.bin
+          cp "$DIR/bootloader.bin" firmware-lumi-gemini-diagnostico/bootloader.bin
+          cp "$DIR/partitions.bin" firmware-lumi-gemini-diagnostico/partitions.bin
+          cp experiments/lumi-gemini-diagnostico/README.md firmware-lumi-gemini-diagnostico/LEIA-ME.md
+          sha256sum firmware-lumi-gemini-diagnostico/*.bin
+
+      - name: Disponibilizar binarios para descarregar
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-Gemini-Diagnostico-Arduino-ESP32S3
+          path: firmware-lumi-gemini-diagnostico/
+          retention-days: 30

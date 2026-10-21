@@ -1,0 +1,102 @@
+name: LUMI HUB 12.6 - Raquel PT-PT no tablet
+
+on:
+  push:
+    branches: [fix/lumi-hub-ptpt-test-20261021]
+    paths:
+      - 'lumi-hub-android/**'
+      - '.github/workflows/lumi-ptpt-tablet-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Obter o codigo LUMI
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar SDK Android
+        shell: bash
+        run: |
+          set -e
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDK_MANAGER"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Gerar demo Opus para teste da ponte
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          mkdir -p lumi-hub-android/app/src/main/assets
+          curl -fLsS --retry 3 --max-time 60             https://github.com/TiagoM20/xiaozhi-esp32/releases/download/lumi-voice-ptpt-demo-v0.1/LUMI-Raquel-PTPT-Demo.mp3             -o /tmp/lumi-raquel-demo.mp3
+          test "$(stat -c%s /tmp/lumi-raquel-demo.mp3)" -gt 15000
+          ffmpeg -hide_banner -loglevel error -y             -i /tmp/lumi-raquel-demo.mp3 -ar 24000 -ac 1             -c:a libopus -b:a 32k -frame_duration 60 -vbr off             -application voip -f ogg /tmp/lumi-raquel-60ms.ogg
+          python3 tools/lumi-v12/ogg_packets.py /tmp/lumi-raquel-60ms.ogg             lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+          test -s lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+
+      - name: Compilar APK diagnostico
+        run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Entregar APK de testes (nao atualiza instalacao assinada)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-12.6-debug-NAO-INSTALAR-SOBRE-V12
+          path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Preparar assinatura original LUMI Studio
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+            echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+            echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "LUMI_HAS_SIGNING=true" >> "$GITHUB_ENV"
+          else
+            echo "LUMI_HAS_SIGNING=false" >> "$GITHUB_ENV"
+            echo "Assinatura original indisponivel; APK debug nao atualiza a app instalada."
+          fi
+
+      - name: Compilar APK assinado para atualizar a app existente
+        if: env.LUMI_HAS_SIGNING == 'true'
+        run: gradle -p lumi-hub-android :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Confirmar assinatura APK
+        if: env.LUMI_HAS_SIGNING == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=lumi-hub-android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p output-ptpt
+          cp "$APK" output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
+          test -s output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
+
+      - name: Disponibilizar APK assinado
+        if: env.LUMI_HAS_SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO
+          path: output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
+          retention-days: 30

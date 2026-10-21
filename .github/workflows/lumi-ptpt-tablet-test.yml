@@ -1,4 +1,4 @@
-name: LUMI HUB 12.6 - Raquel PT-PT no tablet
+name: LUMI HUB 12.7 - Raquel PT-PT e atualizacao na app
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android:
@@ -58,7 +58,7 @@ jobs:
       - name: Entregar APK de testes (nao atualiza instalacao assinada)
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-HUB-12.6-debug-NAO-INSTALAR-SOBRE-V12
+          name: LUMI-HUB-12.7-debug-NAO-INSTALAR-SOBRE-V12
           path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
@@ -90,13 +90,31 @@ jobs:
           APK=lumi-hub-android/app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           mkdir -p output-ptpt
-          cp "$APK" output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
-          test -s output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
+          cp "$APK" output-ptpt/LUMI-HUB-12.7-RAQUEL-PTPT-ASSINADO.apk
+          test -s output-ptpt/LUMI-HUB-12.7-RAQUEL-PTPT-ASSINADO.apk
 
       - name: Disponibilizar APK assinado
         if: env.LUMI_HAS_SIGNING == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO
-          path: output-ptpt/LUMI-HUB-12.6-RAQUEL-PTPT-ASSINADO.apk
+          name: LUMI-HUB-12.7-RAQUEL-PTPT-ASSINADO
+          path: output-ptpt/LUMI-HUB-12.7-RAQUEL-PTPT-ASSINADO.apk
           retention-days: 30
+
+      - name: Publicar V12.7 em Atualizacoes > Versoes
+        if: env.LUMI_HAS_SIGNING == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hub-v0.12.7
+          target_commitish: fix/lumi-hub-ptpt-test-20261021
+          name: LUMI HUB V12.7 - Raquel PT-PT e novo icon
+          prerelease: true
+          make_latest: false
+          body: |
+            Atualizacao assinada para Blackview TAB15, instalavel por cima do HUB anterior.
+            Novo icon: casa azul uniforme, olhos e sorriso, chamine azul e Wi-Fi amarelo.
+            Teste independente da voz Azure Raquel PT-PT no tablet.
+            Ativacao da ponte de voz sem reiniciar toda a central.
+            Compilacao e assinatura validadas no GitHub; funcionamento real continua por testar.
+            O firmware ESP32 e os GIFs da LUMI DESK nao sao alterados.
+          files: output-ptpt/LUMI-HUB-12.7-RAQUEL-PTPT-ASSINADO.apk

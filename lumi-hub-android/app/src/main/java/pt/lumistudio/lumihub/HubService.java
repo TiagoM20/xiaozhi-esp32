@@ -59,10 +59,20 @@ public final class HubService extends Service {
         mcpBridge = new XiaozhiMcpBridge(this);
         mcpBridge.start();
         syncCoreConnection();
-        if (getSharedPreferences("hub",MODE_PRIVATE)
-                .getBoolean("desk_gateway_enabled",false)) {
-            deskGateway = new DeskVoiceGateway(this);
+        syncDeskGateway();
+    }
+
+    /** Permite ligar/desligar a ponte sem reiniciar o serviço e sem cortar o CORE. */
+    private void syncDeskGateway() {
+        boolean enabled=getSharedPreferences("hub",MODE_PRIVATE)
+            .getBoolean("desk_gateway_enabled",false);
+        if(enabled) {
+            if(deskGateway!=null)return;
+            deskGateway=new DeskVoiceGateway(this);
             deskGateway.start();
+        } else if(deskGateway!=null) {
+            deskGateway.close();
+            deskGateway=null;
         }
     }
 
@@ -97,6 +107,7 @@ public final class HubService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         syncCoreConnection();
+        syncDeskGateway();
         return START_STICKY;
     }
 

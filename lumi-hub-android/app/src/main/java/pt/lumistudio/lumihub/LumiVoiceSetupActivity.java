@@ -3,6 +3,12 @@ package pt.lumistudio.lumihub;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioTrack;
+import android.os.SystemClock;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.os.Bundle;
 import android.text.InputType;
 import android.widget.Button;
@@ -16,6 +22,7 @@ public final class LumiVoiceSetupActivity extends Activity {
     private EditText region,azure,openai,model;
     private TextView status;
     private SharedPreferences p;
+    private final AtomicBoolean voiceTestRunning=new AtomicBoolean(false);
     private TextView text(String content,int size){
         TextView t=new TextView(this);t.setText(content);t.setTextSize(size);
         t.setTextColor(Color.WHITE);t.setPadding(12,12,12,12);return t;
@@ -32,6 +39,57 @@ public final class LumiVoiceSetupActivity extends Activity {
         Button b=new Button(this);b.setAllCaps(false);b.setText(label);
         l.addView(b);b.setOnClickListener(v->action.run());
     }
+    /** Teste isolado do serviço Azure e da coluna do tablet, sem DESK nem OpenAI. */
+    private void testRaquelOnTablet(){
+        if(!voiceTestRunning.compareAndSet(false,true)){
+            status.setText("O teste da Raquel já está a decorrer.");return;
+        }
+        if(LumiSecrets.get(this,"azure").isEmpty()){
+            voiceTestRunning.set(false);
+            status.setText("Guarda primeiro a chave Azure Speech.");return;
+        }
+        status.setText("A pedir áudio português de Portugal à Azure…");
+        new Thread(()->{
+            AudioTrack player=null;
+            try{
+                byte[] pcm=LumiCloudVoice.speak(this,p,
+                    "Olá! Sou a Lumi e estou a falar português de Portugal. " +
+                    "Esta é a minha voz Raquel, diretamente no tablet.");
+                AudioFormat format=new AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(24000)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
+                AudioAttributes attrs=new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
+                player=new AudioTrack.Builder()
+                    .setAudioAttributes(attrs)
+                    .setAudioFormat(format)
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .setBufferSizeInBytes(pcm.length).build();
+                if(player.getState()!=AudioTrack.STATE_INITIALIZED)
+                    throw new IOException("A coluna não iniciou a reprodução.");
+                int written=player.write(pcm,0,pcm.length);
+                if(written!=pcm.length)throw new IOException("Áudio PCM incompleto.");
+                player.play();
+                SystemClock.sleep(Math.min(15000L,pcm.length/48L+600L));
+                runOnUiThread(()->{
+                    if(!isFinishing())status.setText(
+                        "Teste Azure PT-PT concluído. Ouviste a Raquel no tablet?");
+                });
+            }catch(Exception error){
+                String safe=error.getClass().getSimpleName()+": "+error.getMessage();
+                runOnUiThread(()->{
+                    if(!isFinishing())status.setText("Falha no teste PT-PT: "+safe);
+                });
+            }finally{
+                if(player!=null){try{player.stop();}catch(Exception ignored){}
+                    player.release();}
+                voiceTestRunning.set(false);
+            }
+        },"LumiRaquelTabletTest").start();
+    }
+
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         p=getSharedPreferences("hub",MODE_PRIVATE);
@@ -54,6 +112,7 @@ public final class LumiVoiceSetupActivity extends Activity {
                 "por configurar":"configurado"),13));
         status=text("A DEMO continua disponível se não existirem credenciais.",13);
         l.addView(status);
+        btn(l,"Testar Raquel PT-PT no tablet (só Azure)",this::testRaquelOnTablet);
         btn(l,"Guardar configuração",()->{
             try{
                 String zone=region.getText().toString().trim().toLowerCase();

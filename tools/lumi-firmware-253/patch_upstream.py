@@ -165,6 +165,24 @@ header = replace_once(
     "    int64_t listening_silence_since_us_ = 0;  // Last moment without detected user speech",
     "header silence field")
 
+# XiaoZhi 2.5.3 builder now deliberately overrides wake selections.
+# Teach this pinned builder ONE local custom choice (avoid choosing stock "Hi ESP").
+BUILDER = ROOT / "scripts/build.py"
+builder = BUILDER.read_text(encoding="utf-8")
+builder = replace_once(
+    builder,
+    '    if normalized == "disabled":\n        options.append("CONFIG_WAKE_WORD_DISABLED=y")',
+    '    if normalized == "lumi_custom":\n'
+    '        if target not in _AFE_WAKE_WORD_TARGETS:\n'
+    '            raise ValueError("LUMI custom wake requires an AFE-capable target")\n'
+    '        options.append("CONFIG_USE_CUSTOM_WAKE_WORD=y")\n'
+    '        return normalized, options, ["CONFIG_USE_CUSTOM_WAKE_WORD"]\n'
+    '    if normalized == "disabled":\n'
+    '        options.append("CONFIG_WAKE_WORD_DISABLED=y")',
+    "custom wake selection in XiaoZhi 2.5.3 builder",
+)
+BUILDER.write_text(builder, encoding="utf-8")
+
 assert "MAIN_EVENT_PLAYBACK_DRAINED" in app, "Loss of upstream playback drain fix"
 assert "audio_service_.IsPlaybackIdle()" in app, "Loss of upstream playback check"
 assert "ShowStartupWakeWordHint()" in app, "Loss of upstream 2.5.3 functionality"

@@ -52,7 +52,7 @@ jobs:
           set -euo pipefail
           source "$IDF_PATH/export.sh"
           python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 \
-            --name esp32-s3-touch-lcd-1.54 --language pt-PT
+            --name esp32-s3-touch-lcd-1.54 --language pt-PT --wake-word lumi_custom
           test -s build/xiaozhi.bin
 
       - name: Verificar build e protecoes, sem alterar GIFs ou NVS

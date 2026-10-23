@@ -86,7 +86,7 @@ jobs:
       - name: Compilar executavel autonomo de Windows (um unico EXE)
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-DESK-Manager-2.5.3-v0.1.1 --icon tools/lumi-desk-windows/LUMI-DESK.ico --add-data "tools/lumi-desk-windows/LUMI-DESK-2.5.3-QUIET-app.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-QUIET-Manager-2.5.3-v0.2.0 --icon tools/lumi-desk-windows/LUMI-DESK.ico --add-data "tools/lumi-desk-windows/LUMI-DESK-2.5.3-QUIET-app.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
           if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do gestor" }
           if (!(Test-Path dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe)) { throw "Falta o executavel" }
 

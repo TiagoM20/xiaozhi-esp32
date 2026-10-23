@@ -349,9 +349,9 @@ custom = replace_once(
     custom,
     "    multinet_->set_det_threshold(multinet_model_data_, threshold_);",
     """    // LUMI Quiet: override permissive threshold from existing asset index.
-    // The ESP-SR MultiNet score must exceed 0.55 to activate.
-    if (threshold_ < 0.55f) {
-        threshold_ = 0.55f;
+    // The ESP-SR MultiNet score must exceed 0.30 to activate.
+    if (threshold_ < 0.30f) {
+        threshold_ = 0.30f;
     }
     ESP_LOGI(TAG, "LUMI Quiet: wake threshold %.2f", threshold_);
     multinet_->set_det_threshold(multinet_model_data_, threshold_);""",
@@ -404,7 +404,7 @@ overrides = {
     "CONFIG_USE_CUSTOM_WAKE_WORD": "y",
     "CONFIG_CUSTOM_WAKE_WORD": '"ola lumi"',
     "CONFIG_CUSTOM_WAKE_WORD_DISPLAY": '"Olá Lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "55",
+    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "30",
     "CONFIG_SEND_WAKE_WORD_DATA": "n",
     "CONFIG_SR_MN_CN_NONE": "y",
     "CONFIG_SR_MN_EN_MULTINET6_QUANT": "y",

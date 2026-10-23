@@ -334,8 +334,8 @@ app = replace_once(
 )
 header = replace_once(
     header,
-    "    int64_t listening_silence_since_us_ = 0;  // Last moment without detected user speech",
-    "    int64_t listening_silence_since_us_ = 0;  // Last moment without detected user speech\n"
+    "    bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)",
+    "    bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)\n"
     "    int64_t lumi_listening_started_us_ = 0;\n"
     "    int64_t lumi_last_speech_end_us_ = 0;\n"
     "    uint32_t lumi_idle_seconds_ = 0;\n"

@@ -1,0 +1,456 @@
+#!/usr/bin/env python3
+"""LUMI Desk Manager: audited, offline backup/install/restore for Waveshare ESP32-S3.
+All FLASH WRITES require verified complete backup and an explicit confirmation.
+The application doesn't upload any credentials or flash images.
+"""
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+import queue
+import re
+import struct
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+FLASH = 0x1000000
+APP_OFFSET = 0x20000
+APP_LENGTH = 0x3F0000
+ASSETS_OFFSET = 0x800000
+ASSETS_LENGTH = 0x800000
+EXPECTED_HASH = "2bbdb1e4af93336dd2a90bd0841266c3c1dcb7204e69a2c7ed0a2481af465170"
+FW_NAME = "LUMI-DESK-2.5.3-CANDIDATO-app.bin"
+
+
+def get_fw():
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return root / FW_NAME
+
+
+def check_app(data, want=None):
+    if len(data) < 256 or data[0] != 0xE9:
+        raise ValueError("Imagem ESP32 invalida.")
+    if data[32:36] != struct.pack("<I", 0xABCD5432):
+        raise ValueError("Descricao ESP-IDF ausente.")
+    version = data[48:80].split(b"\0")[0].decode("ascii", "replace")
+    name = data[80:112].split(b"\0")[0].decode("ascii", "replace")
+    if name != "xiaozhi" or (want and version != want):
+        raise ValueError("Imagem de firmware inesperada (projeto/versao).")
+    return version
+
+
+def check_fw():
+    fw = get_fw()
+    if not fw.is_file():
+        raise ValueError("Firmware 2.5.3 nao foi incluido neste executavel.")
+    data = fw.read_bytes()
+    if not 1000000 < len(data) <= APP_LENGTH:
+        raise ValueError("Tamanho do firmware invalido.")
+    check_app(data, "2.5.3")
+    if hashlib.sha256(data).hexdigest() != EXPECTED_HASH:
+        raise ValueError("O firmware nao corresponde ao binario aprovado no GitHub.")
+    return data
+
+
+def parse_flash(data):
+    if len(data) != FLASH:
+        raise ValueError("Backup incompleto: sao necessarios exatamente 16 MB.")
+    if data[0] != 0xE9:
+        raise ValueError("Bootloader invalido ou dispositivo encriptado.")
+    expected = {
+        "nvs": (1, 2, 0x9000, 0x4000),
+        "otadata": (1, 0, 0xd000, 0x2000),
+        "phy_init": (1, 1, 0xf000, 0x1000),
+        "ota_0": (0, 0x10, APP_OFFSET, APP_LENGTH),
+        "ota_1": (0, 0x11, 0x410000, APP_LENGTH),
+        "assets": (1, 0x82, ASSETS_OFFSET, ASSETS_LENGTH),
+    }
+    found = {}
+    for i in range(96):
+        start = 0x8000 + i * 32
+        entry = data[start:start + 32]
+        if entry == b"\xff" * 32:
+            break
+        if len(entry) != 32:
+            raise ValueError("Tabela de particoes truncada.")
+        magic, typ, sub, offset, length, rawname, flags = struct.unpack("<HBBII16sI", entry)
+        if magic == 0xEBEB:
+            break
+        if magic != 0x50AA:
+            raise ValueError("Tabela de particoes desconhecida.")
+        name = rawname.split(b"\0", 1)[0].decode("ascii", "replace")
+        if name in found:
+            raise ValueError("Particao duplicada: " + name)
+        found[name] = (typ, sub, offset, length)
+    if found != expected:
+        raise ValueError("Tabela de particoes diferente da LUMI validada. Nao gravar.")
+    version = check_app(data[APP_OFFSET:APP_OFFSET + 512])
+    if version not in ("2.5.1", "2.5.2", "2.5.3"):
+        raise ValueError("Versao atual nao autorizada: " + version)
+    if data[0xd000:0xf000] != b"\xff" * 0x2000:
+        raise ValueError("OTA data nao vazia. O slot ativo pode ser ota_1: instalacao bloqueada.")
+    count, checksum, length = struct.unpack_from("<III", data, ASSETS_OFFSET)
+    if not 1 <= count <= 4096 or count * 44 > length or length > ASSETS_LENGTH - 12:
+        raise ValueError("Formato de recursos (GIFs) nao reconhecido.")
+    content = data[ASSETS_OFFSET + 12:ASSETS_OFFSET + 12 + length]
+    unsigned = sum(content) & 65535
+    signed = (unsigned - 256 * sum(v >= 128 for v in content)) & 65535
+    if checksum not in (unsigned, signed):
+        raise ValueError("Checksum dos recursos invalido.")
+    files = {}
+    for i in range(count):
+        raw, size, offset, width, height = struct.unpack_from("<32sIIHH", content, i * 44)
+        name = raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+        files[name] = (size, offset)
+    if "index.json" not in files:
+        raise ValueError("Indice de recursos nao encontrado.")
+    size, offset = files["index.json"]
+    begin = count * 44 + offset
+    if begin + size + 2 > length or content[begin:begin + 2] != b"ZZ":
+        raise ValueError("Indice de recursos incompatível.")
+    index = json.loads(content[begin + 2:begin + 2 + size].decode("utf-8"))
+    if not isinstance(index, dict) or index.get("version", 1) > 1:
+        raise ValueError("Versao de assets nao suportada.")
+    gifs = [name for name in files if name.lower().endswith(".gif")]
+    return {
+        "versao_atual": version,
+        "particoes": [{"nome": name, "offset": hex(v[2]), "tamanho": hex(v[3])}
+                      for name, v in expected.items()],
+        "numero_de_recursos": count,
+        "gifs_identificados": len(gifs),
+        "nomes_dos_gifs": gifs[:30],
+        "checksum_recursos": "OK",
+        "otadata_em_branco": True,
+        "escrita_permitida_apenas_em": "0x20000 - imagem de aplicacao",
+        "observacao": "Backup contem credenciais e deve permanecer no PC."
+    }
+
+
+def backup_dir():
+    root = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "LUMI-DESK" / "Backups"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def esp_child(args):
+    try:
+        import esptool
+        esptool.main(args)
+        return 0
+    except SystemExit as ex:
+        return int(ex.code or 0) if isinstance(ex.code, (int, type(None))) else 1
+    except Exception as ex:
+        print("FALHA ESPTOOL:", str(ex), flush=True)
+        return 1
+
+
+class LumiManager:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("LUMI DESK | Gestor 2.5.3")
+        self.master.geometry("820x690")
+        self.master.minsize(660, 580)
+        self.master.configure(bg="#0C1321")
+        self.events = queue.Queue()
+        self.working = False
+        self.last_backup = None
+
+        top = tk.Frame(master, bg="#0C1321")
+        top.pack(fill="x", padx=24, pady=(19, 10))
+        tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
+                 font=("Segoe UI Semibold", 23)).pack(anchor="w")
+        tk.Label(top, text="Gestor de firmware 2.5.3  •  Olá Lumi  •  Raquel PT-PT",
+                 bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
+        tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
+                 bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
+
+        conn = tk.Frame(master, bg="#18253A")
+        conn.pack(fill="x", padx=24, pady=10)
+        tk.Label(conn, text="Porta USB da LUMI:", bg="#18253A", fg="#EAF4FF",
+                 font=("Segoe UI", 10)).pack(side="left", padx=14, pady=17)
+        self.port = tk.StringVar()
+        self.portbox = ttk.Combobox(conn, textvariable=self.port, width=15, state="readonly")
+        self.portbox.pack(side="left", padx=6)
+        self.refresh_btn = tk.Button(conn, text="Detetar portas", command=self.refresh_ports,
+                                     bg="#263D60", fg="white", relief="flat", padx=14, pady=7)
+        self.refresh_btn.pack(side="left", padx=6)
+        self.test_btn = tk.Button(conn, text="Testar ligação", command=self.test_connection,
+                                  bg="#0565CF", fg="white", relief="flat", padx=14, pady=7)
+        self.test_btn.pack(side="right", padx=12)
+
+        operations = tk.Frame(master, bg="#0C1321")
+        operations.pack(fill="x", padx=24, pady=10)
+        self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
+                                         self.do_backup)
+        self.backup_btn.pack(fill="x", pady=4)
+        self.install_btn = self.op_button(operations, "2  INSTALAR 2.5.3", "#365274",
+                                          self.do_install)
+        self.install_btn.pack(fill="x", pady=4)
+        self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
+                                          self.do_restore)
+        self.restore_btn.pack(fill="x", pady=4)
+
+        tk.Label(master, text="Relatório e diagnóstico (sem publicação de dados)",
+                 bg="#0C1321", fg="#EAF4FF", font=("Segoe UI Semibold", 11)).pack(
+            anchor="w", padx=26, pady=(14, 4))
+        container = tk.Frame(master, bg="#132034")
+        container.pack(fill="both", expand=True, padx=24, pady=(0, 14))
+        self.log = tk.Text(container, bg="#132034", fg="#DAE9F5",
+                           font=("Consolas", 9), relief="flat", wrap="word", padx=12, pady=12)
+        self.log.pack(fill="both", expand=True)
+        self.log.configure(state="disabled")
+        self.status = tk.StringVar(value="Pronto. Seleciona a porta da LUMI DESK.")
+        tk.Label(master, textvariable=self.status, bg="#0C1321", fg="#B8C8DE",
+                 font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=25, pady=(0, 16))
+
+        self.refresh_ports()
+        try:
+            check_fw()
+            self.say("Firmware 2.5.3 validado por SHA256 e assinatura ESP-IDF.")
+        except Exception as err:
+            self.say("ATENÇÃO: " + str(err))
+        self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
+        self.say("Os backups ficam em Documentos\\LUMI-DESK\\Backups e contêm dados privados.")
+        self.master.after(100, self.drain)
+
+    def op_button(self, parent, title, color, callback):
+        return tk.Button(parent, text=title, command=callback, bg=color,
+                         fg="#FFFFFF", activebackground="#0053B8",
+                         font=("Segoe UI Semibold", 11), relief="flat", bd=0,
+                         cursor="hand2", pady=11)
+
+    def refresh_ports(self):
+        from serial.tools import list_ports
+        ports = [p.device for p in list_ports.comports()]
+        self.portbox["values"] = ports
+        if ports and (self.port.get() not in ports):
+            self.port.set("COM6" if "COM6" in ports else ports[0])
+        if not ports:
+            self.port.set("")
+            self.say("Nenhuma porta COM detetada. Liga a DESK por USB e carrega em Detetar portas.")
+
+    def say(self, text):
+        if threading.current_thread() is threading.main_thread():
+            self.append(text)
+        else:
+            self.events.put(("log", str(text)))
+
+    def append(self, text):
+        self.log.configure(state="normal")
+        self.log.insert("end", str(text) + "\n")
+        self.log.see("end")
+        self.log.configure(state="disabled")
+
+    def drain(self):
+        while True:
+            try:
+                event, payload = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if event == "log":
+                self.append(payload)
+            elif event == "status":
+                self.status.set(payload)
+            elif event == "done":
+                self.working = False
+                self.lock_buttons(False)
+                self.status.set(payload)
+            elif event == "question":
+                title, body, answer, wait = payload
+                answer.append(messagebox.askyesno(title, body))
+                wait.set()
+            elif event == "error":
+                messagebox.showerror("Operação interrompida", payload)
+            elif event == "ok":
+                messagebox.showinfo("LUMI DESK", payload)
+        self.master.after(100, self.drain)
+
+    def lock_buttons(self, working):
+        for button in (self.backup_btn, self.install_btn, self.restore_btn,
+                       self.refresh_btn, self.test_btn):
+            button.configure(state="disabled" if working else "normal")
+
+    def start(self, action, arg=None):
+        if self.working:
+            return
+        port = self.port.get().strip()
+        if not re.fullmatch(r"COM[0-9]+", port, re.IGNORECASE):
+            messagebox.showerror("Porta USB", "Liga a LUMI DESK e escolhe a porta COM.")
+            return
+        self.working = True
+        self.lock_buttons(True)
+        self.status.set("Operação em curso — não desligues o cabo USB.")
+        threading.Thread(target=self.worker, args=(action, port, arg), daemon=True).start()
+
+    def choose(self, title, body):
+        wait = threading.Event()
+        answer = []
+        self.events.put(("question", (title, body, answer, wait)))
+        wait.wait()
+        return answer[0]
+
+    def esp(self, *args):
+        argv = [sys.executable, "--esptool-child", "--chip", "esp32s3",
+                "--port", self.current_port] + [str(a) for a in args]
+        self.say("> esptool " + " ".join(map(str, args[:4])) + (" …" if len(args) > 4 else ""))
+        flags = 0x08000000 if sys.platform == "win32" else 0
+        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, errors="replace", bufsize=1,
+                                   creationflags=flags)
+        lines = []
+        for line in iter(process.stdout.readline, ""):
+            content = line.strip()
+            if content:
+                lines.append(content)
+                self.say(content)
+        code = process.wait()
+        if code:
+            raise ValueError("A comunicação com o ESP32 falhou (código " + str(code) + ").")
+        return "\n".join(lines)
+
+    def mac(self):
+        details = self.esp("read-mac")
+        found = re.search(r"(?:MAC|MAC address):\s*([0-9a-f]{2}(?::[0-9a-f]{2}){5})",
+                          details, flags=re.I)
+        if not found:
+            raise ValueError("Não foi possível confirmar o identificador da placa.")
+        return found.group(1).lower()
+
+    def acquire_backup(self, mac):
+        directory = backup_dir() / (dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+                                    + "-" + self.current_port.upper())
+        directory.mkdir(parents=True, exist_ok=False)
+        target = directory / "flash-integral-16MB.bin"
+        self.say("A ler os 16 MB completos. Não está a escrever nada na placa.")
+        self.esp("read-flash", "0x0", "0x1000000", target)
+        data = target.read_bytes()
+        result = parse_flash(data)
+        result["sha256_backup"] = hashlib.sha256(data).hexdigest()
+        result["tamanho_backup"] = len(data)
+        result["mac"] = mac
+        # Private metadata stays only beside the complete backup. Never upload.
+        (directory / "metadata.json").write_text(
+            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        public_result = {k: v for k, v in result.items()
+                         if k not in ("mac", "sha256_backup")}
+        (directory / "relatorio-sem-credenciais.json").write_text(
+            json.dumps(public_result, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.say("BACKUP CONFIRMADO: " + str(target))
+        self.say("Firmware atual: " + result["versao_atual"]
+                 + " | GIFs na tabela: " + str(result["gifs_identificados"]))
+        self.say("Recursos preservados. Guarda a cópia privada no teu PC.")
+        return directory, target, result
+
+    def verify_readback(self, expected_path):
+        expected = expected_path.read_bytes()
+        verification = expected_path.parent / "verificacao-temporaria.bin"
+        try:
+            self.esp("read-flash", "0x20000", str(len(expected)), verification)
+            if hashlib.sha256(verification.read_bytes()).digest() != hashlib.sha256(expected).digest():
+                raise ValueError("A verificação da gravação falhou. Utiliza REPOSIÇÃO.")
+            self.say("Verificação dos bytes gravados: OK.")
+        finally:
+            verification.unlink(missing_ok=True)
+
+    def worker(self, action, port, arg):
+        self.current_port = port
+        try:
+            check_fw()
+            self.say("\n--- " + action.upper() + " | " + port + " ---")
+            self.esp("flash-id")
+            mac = self.mac()
+            if action == "test":
+                self.events.put(("ok", "LUMI DESK detetada em " + port + "."))
+            elif action in ("backup", "install"):
+                folder, source, report = self.acquire_backup(mac)
+                self.last_backup = str(source)
+                if action == "backup":
+                    self.events.put(("ok", "Cópia e diagnóstico concluídos.\n\n"
+                                     + str(folder)
+                                     + "\n\nNão foi feita qualquer gravação."))
+                else:
+                    fw = get_fw()
+                    if not self.choose("Confirmar instalação",
+                        "A cópia de segurança integral foi validada.\n\n"
+                        "Versão anterior: " + report["versao_atual"] + "\n"
+                        "Nova versão: 2.5.3\n\n"
+                        "Vamos gravar APENAS a aplicação na partição ota_0 (0x20000).\n"
+                        "As definições e GIFs não serão alterados.\n\n"
+                        "Queres instalar a nova versão?"):
+                        self.say("Instalação cancelada. O backup foi mantido.")
+                    else:
+                        self.say("A gravar APENAS a imagem da aplicação (0x20000).")
+                        self.esp("write-flash", "0x20000", fw)
+                        self.verify_readback(fw)
+                        self.events.put(("ok", "Firmware 2.5.3 gravado e verificado.\n"
+                                         "Reinicia a DESK e testa a Raquel e o 'Olá Lumi'."))
+            elif action == "restore":
+                original = Path(arg)
+                if original.name != "flash-integral-16MB.bin":
+                    raise ValueError("Seleciona uma cópia criada pelo gestor LUMI.")
+                data = original.read_bytes()
+                report = parse_flash(data)
+                meta_path = original.parent / "metadata.json"
+                if not meta_path.exists():
+                    raise ValueError("Metadados da cópia em falta.")
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta.get("mac") != mac or meta.get("sha256_backup") != hashlib.sha256(data).hexdigest():
+                    raise ValueError("A cópia não pertence a esta placa ou foi alterada.")
+                if not self.choose("Confirmar recuperação",
+                    "Repor a aplicação " + report["versao_atual"]
+                    + " desta cópia?\nApenas ota_0 (0x20000) será escrita.\n"
+                    "Recursos e configurações permanecem intactos."):
+                    self.say("Reposição cancelada.")
+                else:
+                    app = original.parent / "aplicacao-original-recuperada.bin"
+                    app.write_bytes(data[APP_OFFSET:APP_OFFSET + APP_LENGTH])
+                    self.esp("write-flash", "0x20000", app)
+                    self.verify_readback(app)
+                    self.events.put(("ok", "Aplicação anterior reposta e verificada.\n"
+                                     "Reinicia a LUMI DESK."))
+            else:
+                raise ValueError("Operação desconhecida.")
+            self.events.put(("done", "Operação terminada."))
+        except Exception as exc:
+            self.say("OPERAÇÃO BLOQUEADA: " + str(exc))
+            self.say("Não usar erase-flash. Não partilhar os backups privados.")
+            self.events.put(("error", str(exc)))
+            self.events.put(("done", "Interrompido com segurança; consulta o relatório."))
+
+    def test_connection(self):
+        self.start("test")
+
+    def do_backup(self):
+        self.start("backup")
+
+    def do_install(self):
+        self.start("install")
+
+    def do_restore(self):
+        file = filedialog.askopenfilename(
+            title="Escolhe o backup integral desta DESK",
+            initialdir=str(backup_dir()),
+            filetypes=[("Backup integral LUMI", "flash-integral-16MB.bin"),
+                       ("Imagens BIN", "*.bin")])
+        if file:
+            self.start("restore", file)
+
+
+def main():
+    root = tk.Tk()
+    try:
+        ttk.Style().theme_use("clam")
+    except tk.TclError:
+        pass
+    LumiManager(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--esptool-child":
+        sys.exit(esp_child(sys.argv[2:]))
+    main()

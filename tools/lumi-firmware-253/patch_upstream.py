@@ -348,11 +348,9 @@ custom = app_file_wake.read_text(encoding="utf-8")
 custom = replace_once(
     custom,
     "    multinet_->set_det_threshold(multinet_model_data_, threshold_);",
-    """    // LUMI Quiet: override permissive threshold from existing asset index.
+    """    // LUMI Quiet: apply known sensitivity irrespective of older asset-pack threshold.
     // The ESP-SR MultiNet score must exceed 0.30 to activate.
-    if (threshold_ < 0.30f) {
-        threshold_ = 0.30f;
-    }
+    threshold_ = 0.30f;
     ESP_LOGI(TAG, "LUMI Quiet: wake threshold %.2f", threshold_);
     multinet_->set_det_threshold(multinet_model_data_, threshold_);""",
     "multinet sensitivity",

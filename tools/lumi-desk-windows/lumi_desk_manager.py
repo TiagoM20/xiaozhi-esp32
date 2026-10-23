@@ -294,23 +294,56 @@ class LumiManager:
         return answer[0]
 
     def esp(self, *args):
-        argv = [sys.executable, "--esptool-child", "--chip", "esp32s3",
-                "--port", self.current_port] + [str(a) for a in args]
-        self.say("> esptool " + " ".join(map(str, args[:4])) + (" …" if len(args) > 4 else ""))
-        flags = 0x08000000 if sys.platform == "win32" else 0
-        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, errors="replace", bufsize=1,
-                                   creationflags=flags)
-        lines = []
-        for line in iter(process.stdout.readline, ""):
-            content = line.strip()
-            if content:
-                lines.append(content)
-                self.say(content)
-        code = process.wait()
-        if code:
-            raise ValueError("A comunicação com o ESP32 falhou (código " + str(code) + ").")
-        return "\n".join(lines)
+        import esptool
+
+        class OutputToGui:
+            def __init__(self, emit):
+                self.emit = emit
+                self.parts = []
+                self.all_lines = []
+                self.encoding = "utf-8"
+
+            def write(self, value):
+                if not value:
+                    return 0
+                text = str(value).replace("\r", "\n")
+                self.parts.append(text)
+                buf = "".join(self.parts)
+                chunks = buf.split("\n")
+                self.parts = [chunks.pop()]
+                for line in chunks:
+                    line = line.strip()
+                    if line:
+                        self.all_lines.append(line)
+                        self.emit(line)
+                return len(value)
+
+            def flush(self):
+                if self.parts:
+                    line = "".join(self.parts).strip()
+                    if line:
+                        self.all_lines.append(line)
+                        self.emit(line)
+                    self.parts = []
+
+            def isatty(self):
+                return False
+
+        args = ["--chip", "esp32s3", "--port", self.current_port] + [str(x) for x in args]
+        self.say("> esptool " + " ".join(args[4:8]))
+        out = OutputToGui(self.say)
+        previous_out, previous_err = sys.stdout, sys.stderr
+        try:
+            sys.stdout, sys.stderr = out, out
+            try:
+                esptool.main(args)
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise RuntimeError("Falha na comunicação ESP32: " + str(exc.code))
+        finally:
+            sys.stdout, sys.stderr = previous_out, previous_err
+            out.flush()
+        return "\n".join(out.all_lines)
 
     def mac(self):
         details = self.esp("read-mac")
@@ -451,6 +484,16 @@ def main():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--esptool-child":
-        sys.exit(esp_child(sys.argv[2:]))
-    main()
+    if len(sys.argv) > 2 and sys.argv[1] == "--self-test":
+        import esptool
+        from serial.tools import list_ports
+        output = {
+            "candidate_hash_ok": bool(check_fw()),
+            "version": check_app(check_fw(), "2.5.3"),
+            "esptool_loaded": bool(esptool),
+            "serial_loaded": bool(list_ports),
+            "tkinter_loaded": bool(tk),
+        }
+        Path(sys.argv[2]).write_text(json.dumps(output, indent=2), encoding="utf-8")
+    else:
+        main()

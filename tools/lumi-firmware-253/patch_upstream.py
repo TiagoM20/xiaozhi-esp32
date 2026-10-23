@@ -50,6 +50,13 @@ wake = """void Application::HandleWakeWordDetectedEvent() {
     auto wake_word = audio_service_.GetLastWakeWord();
     ESP_LOGI(TAG, "Wake word detected: %s (state: %d)", wake_word.c_str(), (int)state);
     if (state == kDeviceStateIdle) {
+        const int64_t now = esp_timer_get_time();
+        if (now - lumi_last_speech_end_us_ < 2000000) {
+            ESP_LOGI(TAG, "LUMI Quiet: wake ignored during 2s audio cooldown");
+            audio_service_.EnableWakeWordDetection(true);
+            return;
+        }
+        lumi_user_spoke_ = false;
         BeginWakeWordInvoke(wake_word);
     } else if (state == kDeviceStateNotifying) {
         StopNotification();
@@ -158,6 +165,193 @@ app = between(
 """,
     "listening wake guard")
 
+# LUMI Quiet: prevent a cloud greeting triggered solely by wake detection.
+# Only send audio after wake; never send the wake event itself.
+app = replace_once(
+    app,
+    "    audio_service_.EncodeWakeWord();",
+    "#if CONFIG_SEND_WAKE_WORD_DATA\n    audio_service_.EncodeWakeWord();\n#endif",
+    "skip wake audio when disabled",
+)
+
+# Track real recognized speech, not a mere wake word. The official cloud
+# can send a greeting after wake; ignore TTS/audio until the first nonempty STT.
+app = replace_once(
+    app,
+    """    protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
+        if (GetDeviceState() == kDeviceStateSpeaking) {""",
+    """    protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
+        if (lumi_user_spoke_ && GetDeviceState() == kDeviceStateSpeaking) {""",
+    "outgoing audio guard",
+)
+app = replace_once(
+    app,
+    """        if (strcmp(type->valuestring, "notify") == 0) {
+            auto audio_url""",
+    """        if (strcmp(type->valuestring, "notify") == 0) {
+            if (!lumi_user_spoke_) {
+                ESP_LOGI(TAG, "LUMI Quiet: ignoring unsolicited notify audio");
+                return;
+            }
+            auto audio_url""",
+    "ignore unsolicited notification audio",
+)
+app = replace_once(
+    app,
+    """            if (strcmp(state->valuestring, "start") == 0) {
+                Schedule([this]() {
+                    aborted_ = false;
+                    SetDeviceState(kDeviceStateSpeaking);""",
+    """            if (strcmp(state->valuestring, "start") == 0) {
+                Schedule([this]() {
+                    if (!lumi_user_spoke_) {
+                        ESP_LOGI(TAG, "LUMI Quiet: suppressing automatic greeting (no user STT)");
+                        return;
+                    }
+                    aborted_ = false;
+                    SetDeviceState(kDeviceStateSpeaking);""",
+    "block greeting tts",
+)
+app = replace_once(
+    app,
+    """                    if (GetDeviceState() == kDeviceStateSpeaking) {
+                        if (listening_mode_ == kListeningModeManualStop) {""",
+    """                    if (GetDeviceState() == kDeviceStateSpeaking) {
+                        lumi_last_speech_end_us_ = esp_timer_get_time();
+                        if (listening_mode_ == kListeningModeManualStop) {""",
+    "record output cooldown",
+)
+app = replace_once(
+    app,
+    """            } else if (strcmp(state->valuestring, "sentence_start") == 0) {
+                auto text = cJSON_GetObjectItem(root, "text");""",
+    """            } else if (strcmp(state->valuestring, "sentence_start") == 0) {
+                if (!lumi_user_spoke_) {
+                    ESP_LOGI(TAG, "LUMI Quiet: hiding unsolicited TTS subtitle");
+                    return;
+                }
+                auto text = cJSON_GetObjectItem(root, "text");""",
+    "hide cloud greeting subtitles",
+)
+app = replace_once(
+    app,
+    """        } else if (strcmp(type->valuestring, "stt") == 0) {
+            auto text = cJSON_GetObjectItem(root, "text");""",
+    """        } else if (strcmp(type->valuestring, "stt") == 0) {
+            auto text = cJSON_GetObjectItem(root, "text");
+            if (cJSON_IsString(text) && text->valuestring[0] != '\0' &&
+                GetDeviceState() == kDeviceStateListening) {
+                lumi_user_spoke_ = true;
+                ESP_LOGI(TAG, "LUMI Quiet: user STT confirmed; TTS authorized");
+            }""",
+    "require user STT",
+)
+# After initial wake, do not emit the local popup/chime either; only visual listening state.
+app = replace_once(
+    app,
+    """    play_popup_on_listening_ = true;
+    SetListeningMode(GetDefaultListeningMode());
+#endif
+}
+
+void Application::HandleStateChangedEvent()""",
+    """    play_popup_on_listening_ = false;
+    SetListeningMode(GetDefaultListeningMode());
+#endif
+}
+
+void Application::HandleStateChangedEvent()""",
+    "silent wake no popup",
+)
+# Initial idle must not speak or display an unsolicited popup.
+app = replace_once(
+    app,
+    """    listening_silence_since_us_ = 0;
+    // Any state change invalidates""",
+    """    listening_silence_since_us_ = 0;
+    if (new_state != kDeviceStateIdle) {
+        lumi_idle_seconds_ = 0;
+    }
+    if (new_state == kDeviceStateIdle) {
+        lumi_user_spoke_ = false;
+    }
+    // Any state change invalidates""",
+    "quiet idle reset",
+)
+app = replace_once(
+    app,
+    """    listening_silence_since_us_ = esp_timer_get_time();
+
+    ConfigureWakeWordForListening();""",
+    """    listening_silence_since_us_ = esp_timer_get_time();
+    lumi_listening_started_us_ = listening_silence_since_us_;
+
+    ConfigureWakeWordForListening();""",
+    "remember listening start",
+)
+# 6s silent fallback for a false activation. After a real STT, preserve the
+# 15s follow-up listening window; neither path sends a voice greeting.
+app = replace_once(
+    app,
+    """                    } else if (now - listening_silence_since_us_ >= 15000000) {
+                        ESP_LOGI(TAG, "LUMI: 15s silence, closing conversation");""",
+    """                    } else if (now - listening_silence_since_us_ >=
+                               (lumi_user_spoke_ ? 15000000 : 6000000)) {
+                        ESP_LOGI(TAG, "LUMI Quiet: silent listening timeout (user=%d)",
+                                 static_cast<int>(lumi_user_spoke_.load()));""",
+    "silent timeout",
+)
+# Visual only: rotate available expressions while idle, infrequently to avoid
+# expensive GIF reallocation; LVGL display safely rejects missing expressions.
+app = replace_once(
+    app,
+    """            clock_ticks_++;
+            // Only timeout a fully enabled microphone""",
+    """            clock_ticks_++;
+            if (GetDeviceState() == kDeviceStateIdle) {
+                lumi_idle_seconds_++;
+                if (lumi_idle_seconds_ % 90 == 0) {
+                    auto display = Board::GetInstance().GetDisplay();
+                    // No audio, no server messages, only the local GIF collection.
+                    // Alternate between sleepy, neutral, sad and happy when idle.
+                    const int phase = (lumi_idle_seconds_ / 90) % 4;
+                    const char* expression = phase == 1 ? "sleepy"
+                        : phase == 2 ? "neutral"
+                        : phase == 3 ? "sad" : "happy";
+                    display->SetEmotion(expression);
+                    ESP_LOGI(TAG, "LUMI Quiet: idle expression %s", expression);
+                }
+            }
+            // Only timeout a fully enabled microphone""",
+    "idle facial expressions",
+)
+header = replace_once(
+    header,
+    "    int64_t listening_silence_since_us_ = 0;  // Last moment without detected user speech",
+    "    int64_t listening_silence_since_us_ = 0;  // Last moment without detected user speech\n"
+    "    int64_t lumi_listening_started_us_ = 0;\n"
+    "    int64_t lumi_last_speech_end_us_ = 0;\n"
+    "    uint32_t lumi_idle_seconds_ = 0;\n"
+    "    std::atomic<bool> lumi_user_spoke_{false};",
+    "quiet state fields",
+)
+assert "std::atomic" in header, "Missing STT atomic marker"
+app_file_wake = ROOT / "main/audio/wake_words/custom_wake_word.cc"
+custom = app_file_wake.read_text(encoding="utf-8")
+custom = replace_once(
+    custom,
+    "    multinet_->set_det_threshold(multinet_model_data_, threshold_);",
+    """    // LUMI Quiet: override permissive threshold from existing asset index.
+    // The ESP-SR MultiNet score must exceed 0.55 to activate.
+    if (threshold_ < 0.55f) {
+        threshold_ = 0.55f;
+    }
+    ESP_LOGI(TAG, "LUMI Quiet: wake threshold %.2f", threshold_);
+    multinet_->set_det_threshold(multinet_model_data_, threshold_);""",
+    "multinet sensitivity",
+)
+app_file_wake.write_text(custom, encoding="utf-8")
+
 header = replace_once(
     header,
     "    bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)",
@@ -203,8 +397,8 @@ overrides = {
     "CONFIG_USE_CUSTOM_WAKE_WORD": "y",
     "CONFIG_CUSTOM_WAKE_WORD": '"ola lumi"',
     "CONFIG_CUSTOM_WAKE_WORD_DISPLAY": '"Olá Lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "20",
-    "CONFIG_SEND_WAKE_WORD_DATA": "y",
+    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "55",
+    "CONFIG_SEND_WAKE_WORD_DATA": "n",
     "CONFIG_SR_MN_CN_NONE": "y",
     "CONFIG_SR_MN_EN_MULTINET6_QUANT": "y",
 }
@@ -212,4 +406,4 @@ opts = [item for item in opts if item.split("=", 1)[0] not in overrides]
 opts.extend(f"{k}={v}" for k, v in overrides.items())
 board["builds"][0]["sdkconfig_append"] = opts
 CONFIG.write_text(json.dumps(board, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print("LUMI 2.5.3 patched: wake idle-only; no self-interruption; playback drain; 15s silence; pt-PT custom wake config")
+print("LUMI Quiet 2.5.3 patched: wake no greeting; TTS only after STT; threshold 55; idle faces; silent timeout; pt-PT")

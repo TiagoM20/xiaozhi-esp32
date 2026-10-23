@@ -47,8 +47,8 @@ def synthetic_flash(ota=None, previous_0="2.5.1", previous_1="2.5.2"):
     def app_at(offset, version):
         data[offset] = 0xE9
         struct.pack_into("<I", data, offset + 32, 0xABCD5432)
-        data[offset + 48:offset + 48 + len(version)] = version.encode()
-        data[offset + 80:offset + 87] = b"xiaozhi"
+        data[offset + 48:offset + 80] = version.encode().ljust(32, b"\0")
+        data[offset + 80:offset + 112] = b"xiaozhi".ljust(32, b"\0")
     app_at(lumi.APP_OFFSETS[0], previous_0)
     app_at(lumi.APP_OFFSETS[1], previous_1)
     data[0xD000:0xF000] = ota if ota is not None else b"\xff" * 0x2000

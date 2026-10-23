@@ -1,9 +1,9 @@
-name: LUMI Desk Manager Windows EXE
+name: LUMI Quiet Manager Windows EXE
 
 on:
   workflow_dispatch:
   push:
-    branches: [feature/lumi-desk-manager-windows-20261023]
+    branches: [feature/lumi-quiet-manager-windows-20261023]
     paths:
       - 'tools/lumi-desk-windows/**'
       - '.github/workflows/lumi-desk-manager-windows.yml'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: lumi-desk-manager-windows
+  group: lumi-quiet-manager-windows
   cancel-in-progress: true
 
 jobs:
@@ -38,22 +38,22 @@ jobs:
       - name: Obter firmware 2.5.3 compilado e validado
         uses: actions/download-artifact@v4
         with:
-          name: LUMI-DESK-2.5.3-CANDIDATO-NAO-INSTALAR-SEM-VALIDAR
+          name: LUMI-DESK-2.5.3-QUIET-EXPERIMENTAL-NAO-INSTALAR
           repository: TiagoM20/xiaozhi-esp32
-          run-id: 39869058007
+          run-id: 39882853178
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: firmware-original
 
       - name: Confirmar identidade do firmware
         shell: pwsh
         run: |
-          Copy-Item firmware-original/LUMI-DESK-2.5.3-CANDIDATO-app.bin tools/lumi-desk-windows/LUMI-DESK-2.5.3-CANDIDATO-app.bin
+          Copy-Item firmware-original/LUMI-DESK-2.5.3-QUIET-app.bin tools/lumi-desk-windows/LUMI-DESK-2.5.3-QUIET-app.bin
           @'
           import hashlib
           from pathlib import Path
-          p = Path('tools/lumi-desk-windows/LUMI-DESK-2.5.3-CANDIDATO-app.bin')
+          p = Path('tools/lumi-desk-windows/LUMI-DESK-2.5.3-QUIET-app.bin')
           actual=hashlib.sha256(p.read_bytes()).hexdigest()
-          expected='2bbdb1e4af93336dd2a90bd0841266c3c1dcb7204e69a2c7ed0a2481af465170'
+          expected='4bedc3b7a829b7e6b9ada5294f5e338b009bce0627ac8ca47d2d565bfe27f8ac'
           assert actual == expected, f'Firmware nao validado: {actual}'
           print('Firmware de origem verificado:',actual)
           '@ | Set-Content -Encoding UTF8 validate_firmware.py
@@ -86,14 +86,14 @@ jobs:
       - name: Compilar executavel autonomo de Windows (um unico EXE)
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-DESK-Manager-2.5.3-v0.1.1 --icon tools/lumi-desk-windows/LUMI-DESK.ico --add-data "tools/lumi-desk-windows/LUMI-DESK-2.5.3-CANDIDATO-app.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-DESK-Manager-2.5.3-v0.1.1 --icon tools/lumi-desk-windows/LUMI-DESK.ico --add-data "tools/lumi-desk-windows/LUMI-DESK-2.5.3-QUIET-app.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
           if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do gestor" }
-          if (!(Test-Path dist/LUMI-DESK-Manager-2.5.3-v0.1.1.exe)) { throw "Falta o executavel" }
+          if (!(Test-Path dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe)) { throw "Falta o executavel" }
 
       - name: Teste real do executavel Windows sem ligar ao ESP32
         shell: pwsh
         run: |
-          $process=Start-Process -FilePath (Resolve-Path "dist/LUMI-DESK-Manager-2.5.3-v0.1.1.exe") -ArgumentList "--self-test", (Join-Path $PWD "self-test.json") -PassThru
+          $process=Start-Process -FilePath (Resolve-Path "dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe") -ArgumentList "--self-test", (Join-Path $PWD "self-test.json") -PassThru
           if (-not $process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw "Timeout self-test" }
           if ($process.ExitCode -ne 0) { throw "O executavel nao concluiu self-test" }
           if (!(Test-Path self-test.json)) { throw "Self-test nao criou relatorio" }
@@ -107,29 +107,33 @@ jobs:
       - name: Calcular integridade
         shell: pwsh
         run: |
-          $hash=(Get-FileHash dist/LUMI-DESK-Manager-2.5.3-v0.1.1.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  LUMI-DESK-Manager-2.5.3-v0.1.1.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-DESK.txt
+          $hash=(Get-FileHash dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-QUIET-Manager-2.5.3-v0.2.0.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-QUIET.txt
           Write-Host "SHA256 EXE: $hash"
 
       - name: Disponibilizar executavel de testes
         uses: actions/upload-artifact@v4
         with:
-          name: LUMI-DESK-MANAGER-WINDOWS-EXE
+          name: LUMI-QUIET-MANAGER-WINDOWS-EXE
           path: |
-            dist/LUMI-DESK-Manager-2.5.3-v0.1.1.exe
-            dist/SHA256-LUMI-DESK.txt
+            dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe
+            dist/SHA256-LUMI-QUIET.txt
           retention-days: 30
 
       - name: Publicar versao experimental para download
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-desk-manager-windows-v0.1.1
-          target_commitish: feature/lumi-desk-manager-windows-20261023
-          name: LUMI Desk Manager Windows 0.1.1 - OTA0 e OTA1 corrigidos
+          tag_name: lumi-quiet-manager-windows-v0.2.0
+          target_commitish: feature/lumi-quiet-manager-windows-20261023
+          name: LUMI Quiet Manager Windows 0.2.0 - Silencio por defeito
           prerelease: true
           make_latest: false
           body: |
             Gestor grafico Windows, executavel autonomo para a Waveshare ESP32-S3-Touch-LCD-1.54.
+            LUMI Quiet 2.5.3: sem saudações espontâneas ao despertar; filtra TTS sem STT.
+            Reduz falsos positivos com limite wake MultiNet 0.55 e curto cooldown.
+            Faz alternancia de expressões no ecrã em repouso, sem gerar áudio.
+            Raquel PT-PT continua a ser obtida na consola XiaoZhi.
             Inclui esptool e firmware 2.5.3 aprovado no CI; nao precisa de Python nem pip.
             Permite diagnostico, backup privado dos 16MB, instalacao guardada e reposicao.
             Corrige a interpretacao dos dados OTA preenchidos: deteta slot ativo ota_0 ou ota_1 por CRC32 e sequencia.
@@ -142,5 +146,5 @@ jobs:
             EXE sem assinatura de codigo Windows; SmartScreen ou antivirus podem bloquear.
             NAO desative o Windows Defender. Consulte codigo fonte e SHA256 antes de executar.
           files: |
-            dist/LUMI-DESK-Manager-2.5.3-v0.1.1.exe
-            dist/SHA256-LUMI-DESK.txt
+            dist/LUMI-QUIET-Manager-2.5.3-v0.2.0.exe
+            dist/SHA256-LUMI-QUIET.txt

@@ -246,7 +246,7 @@ app = replace_once(
             auto text = cJSON_GetObjectItem(root, "text");""",
     """        } else if (strcmp(type->valuestring, "stt") == 0) {
             auto text = cJSON_GetObjectItem(root, "text");
-            if (cJSON_IsString(text) && text->valuestring[0] != '\0' &&
+            if (cJSON_IsString(text) && text->valuestring[0] != '\\0' &&
                 GetDeviceState() == kDeviceStateListening) {
                 lumi_user_spoke_ = true;
                 ESP_LOGI(TAG, "LUMI Quiet: user STT confirmed; TTS authorized");

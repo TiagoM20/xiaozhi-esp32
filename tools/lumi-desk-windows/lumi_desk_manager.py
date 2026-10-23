@@ -227,6 +227,10 @@ class LumiManager:
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
                                           self.do_restore)
         self.restore_btn.pack(fill="x", pady=4)
+        self.inspect_btn = self.op_button(operations,
+                        "REANALISAR CÓPIA EXISTENTE (SEM LER A DESK)",
+                        "#243B5B", self.do_inspect)
+        self.inspect_btn.pack(fill="x", pady=4)
 
         tk.Label(master, text="Relatório e diagnóstico (sem publicação de dados)",
                  bg="#0C1321", fg="#EAF4FF", font=("Segoe UI Semibold", 11)).pack(
@@ -244,7 +248,7 @@ class LumiManager:
         self.refresh_ports()
         try:
             check_fw()
-            self.say("Firmware 2.5.3 validado por SHA256 e assinatura ESP-IDF.")
+            self.say("Firmware 2.5.3 validado por SHA256 e formato ESP-IDF.")
         except Exception as err:
             self.say("ATENÇÃO: " + str(err))
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
@@ -305,7 +309,7 @@ class LumiManager:
 
     def lock_buttons(self, working):
         for button in (self.backup_btn, self.install_btn, self.restore_btn,
-                       self.refresh_btn, self.test_btn):
+                       self.refresh_btn, self.test_btn, self.inspect_btn):
             button.configure(state="disabled" if working else "normal")
 
     def start(self, action, arg=None):
@@ -408,20 +412,62 @@ class LumiManager:
             json.dumps(public_result, indent=2, ensure_ascii=False), encoding="utf-8")
         self.say("BACKUP CONFIRMADO: " + str(target))
         self.say("Firmware atual: " + result["versao_atual"]
+                 + " | " + result["ota_ativo"]
+                 + " (" + result["offset_ativo"] + ")"
                  + " | GIFs na tabela: " + str(result["gifs_identificados"]))
         self.say("Recursos preservados. Guarda a cópia privada no teu PC.")
         return directory, target, result
 
-    def verify_readback(self, expected_path):
+    def verify_readback(self, expected_path, offset):
         expected = expected_path.read_bytes()
         verification = expected_path.parent / "verificacao-temporaria.bin"
         try:
-            self.esp("read-flash", "0x20000", str(len(expected)), verification)
+            self.esp("read-flash", hex(offset), str(len(expected)), verification)
             if hashlib.sha256(verification.read_bytes()).digest() != hashlib.sha256(expected).digest():
                 raise ValueError("A verificação da gravação falhou. Utiliza REPOSIÇÃO.")
             self.say("Verificação dos bytes gravados: OK.")
         finally:
             verification.unlink(missing_ok=True)
+
+    def verify_ota_unchanged(self, backup_path):
+        """A post-backup check to avoid writing into a slot after OTA selection changes."""
+        backup_path = Path(backup_path)
+        data = backup_path.read_bytes()
+        saved = data[OTA_DATA_OFFSET:OTA_DATA_OFFSET + OTA_DATA_LENGTH]
+        temp = backup_path.parent / "otadata-verificacao-temporaria.bin"
+        try:
+            self.esp("read-flash", hex(OTA_DATA_OFFSET), hex(OTA_DATA_LENGTH), temp)
+            if temp.read_bytes() != saved:
+                raise ValueError("OTA mudou desde a copia de seguranca. "
+                                 "Nenhuma escrita autorizada. Faz um novo backup.")
+            self.say("OTA revalidado: partição ativa não mudou.")
+        finally:
+            temp.unlink(missing_ok=True)
+
+    def do_inspect(self):
+        path = filedialog.askopenfilename(
+            title="Reanalisar backup integral que já foi guardado",
+            initialdir=str(backup_dir()),
+            filetypes=[("Imagem flash integral", "*.bin")])
+        if not path:
+            return
+        try:
+            p = Path(path)
+            if p.name != "flash-integral-16MB.bin":
+                raise ValueError("Escolhe flash-integral-16MB.bin.")
+            report = parse_flash(p.read_bytes())
+            report_path = p.parent / "relatorio-sem-credenciais.json"
+            report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                                   encoding="utf-8")
+            self.say("Relatório de cópia existente: " + str(report_path))
+            self.say("Versão: " + report["versao_atual"] + " | " + report["ota_ativo"]
+                     + " | " + report["offset_ativo"])
+            messagebox.showinfo("Backup analisado",
+                                "Backup compatível e relatório guardado.\n\n"
+                                + report["ota_ativo"] + " · " + report["versao_atual"]
+                                + "\n\n" + str(report_path))
+        except Exception as ex:
+            messagebox.showerror("Backup não validado", str(ex))
 
     def worker(self, action, port, arg):
         self.current_port = port
@@ -445,14 +491,17 @@ class LumiManager:
                         "A cópia de segurança integral foi validada.\n\n"
                         "Versão anterior: " + report["versao_atual"] + "\n"
                         "Nova versão: 2.5.3\n\n"
-                        "Vamos gravar APENAS a aplicação na partição ota_0 (0x20000).\n"
+                        "Vamos gravar APENAS a aplicação em " + report["ota_ativo"]
+                        + " (" + report["offset_ativo"] + ").\n"
                         "As definições e GIFs não serão alterados.\n\n"
                         "Queres instalar a nova versão?"):
                         self.say("Instalação cancelada. O backup foi mantido.")
                     else:
-                        self.say("A gravar APENAS a imagem da aplicação (0x20000).")
-                        self.esp("write-flash", "0x20000", fw)
-                        self.verify_readback(fw)
+                        offset = int(report["offset_ativo"], 16)
+                        self.verify_ota_unchanged(source)
+                        self.say("A gravar APENAS a imagem da aplicação em " + report["offset_ativo"])
+                        self.esp("write-flash", hex(offset), fw)
+                        self.verify_readback(fw, offset)
                         self.events.put(("ok", "Firmware 2.5.3 gravado e verificado.\n"
                                          "Reinicia a DESK e testa a Raquel e o 'Olá Lumi'."))
             elif action == "restore":
@@ -469,14 +518,17 @@ class LumiManager:
                     raise ValueError("A cópia não pertence a esta placa ou foi alterada.")
                 if not self.choose("Confirmar recuperação",
                     "Repor a aplicação " + report["versao_atual"]
-                    + " desta cópia?\nApenas ota_0 (0x20000) será escrita.\n"
+                    + " desta cópia?\nApenas " + report["ota_ativo"]
+                    + " (" + report["offset_ativo"] + ") será escrita.\n"
                     "Recursos e configurações permanecem intactos."):
                     self.say("Reposição cancelada.")
                 else:
                     app = original.parent / "aplicacao-original-recuperada.bin"
-                    app.write_bytes(data[APP_OFFSET:APP_OFFSET + APP_LENGTH])
-                    self.esp("write-flash", "0x20000", app)
-                    self.verify_readback(app)
+                    offset = int(report["offset_ativo"], 16)
+                    self.verify_ota_unchanged(original)
+                    app.write_bytes(data[offset:offset + APP_LENGTH])
+                    self.esp("write-flash", hex(offset), app)
+                    self.verify_readback(app, offset)
                     self.events.put(("ok", "Aplicação anterior reposta e verificada.\n"
                                      "Reinicia a LUMI DESK."))
             else:

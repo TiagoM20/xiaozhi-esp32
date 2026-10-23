@@ -165,6 +165,13 @@ app = between(
 """,
     "listening wake guard")
 
+header = replace_once(
+    header,
+    "#include <cstdint>\n",
+    "#include <cstdint>\n#include <atomic>\n",
+    "atomic flag include",
+)
+
 # LUMI Quiet: prevent a cloud greeting triggered solely by wake detection.
 # Only send audio after wake; never send the wake event itself.
 app = replace_once(

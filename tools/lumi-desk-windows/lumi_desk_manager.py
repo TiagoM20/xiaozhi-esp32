@@ -25,8 +25,8 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-EXPECTED_HASH = "4bedc3b7a829b7e6b9ada5294f5e338b009bce0627ac8ca47d2d565bfe27f8ac"
-FW_NAME = "LUMI-DESK-2.5.3-QUIET-app.bin"
+EXPECTED_HASH = "b106009a78d3fa8dc5642411a5da94d68a553419f1ac15ad0a8e3bf0bcfe4ec3"
+FW_NAME = "LUMI-DESK-2.5.3-QUIET-WAKE-FIX-app.bin"
 
 
 def get_fw():
@@ -185,7 +185,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | QUIET 2.5.3")
+        self.master.title("LUMI DESK | QUIET Wake Fix 2.5.3")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -197,7 +197,7 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="QUIET 2.5.3  •  Olá Lumi  •  Raquel PT-PT  •  Sem saudações automáticas",
+        tk.Label(top, text="QUIET Wake Fix 2.5.3  •  Olá Lumi  •  Raquel PT-PT",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
         tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
@@ -221,7 +221,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR LUMI QUIET 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR QUIET WAKE FIX 2.5.3", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",

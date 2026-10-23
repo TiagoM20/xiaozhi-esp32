@@ -6,7 +6,7 @@ on:
     branches: [fix/lumi-quiet-wake-0.30-20261023]
     paths:
       - 'tools/lumi-firmware-253/**'
-      - '.github/workflows/lumi-desk-253.yml'
+      - '.github/workflows/lumi-quiet-wake-fix-253.yml'
 
 permissions:
   contents: read

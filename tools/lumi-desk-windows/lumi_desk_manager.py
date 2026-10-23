@@ -20,6 +20,9 @@ from tkinter import ttk, filedialog, messagebox
 FLASH = 0x1000000
 APP_OFFSET = 0x20000
 APP_LENGTH = 0x3F0000
+APP_OFFSETS = (0x20000, 0x410000)
+OTA_DATA_OFFSET = 0xD000
+OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
 EXPECTED_HASH = "2bbdb1e4af93336dd2a90bd0841266c3c1dcb7204e69a2c7ed0a2481af465170"
@@ -56,6 +59,33 @@ def check_fw():
     return data
 
 
+def select_ota(otadata):
+    """Read-only ESP-IDF v6.1 selection. Never modify OTA metadata."""
+    import zlib
+    if len(otadata) != OTA_DATA_LENGTH:
+        raise ValueError("OTA metadata incompleta.")
+    records = []
+    for i, sector in enumerate((0, 0x1000)):
+        seq, _, state, crc = struct.unpack("<I20sII", otadata[sector:sector + 32])
+        good_crc = crc == (zlib.crc32(struct.pack("<I", seq), 0xFFFFFFFF) & 0xFFFFFFFF)
+        valid = seq not in (0, 0xFFFFFFFF) and state not in (3, 4) and good_crc
+        records.append({"indice": i, "sequencia": seq, "estado": state,
+                        "crc_valido": good_crc, "valido": valid})
+    valid = [r for r in records if r["valido"]]
+    if not valid:
+        if otadata == b"\xff" * OTA_DATA_LENGTH:
+            return {"slot": 0, "offset": APP_OFFSETS[0], "sequencia": None,
+                    "estado": "inicial", "em_branco": True, "registos": records}
+        raise ValueError("Dados OTA preenchidos mas sem CRC valido. Nenhuma gravacao permitida.")
+    active = max(valid, key=lambda r: r["sequencia"])
+    if active["estado"] not in (2, 0xFFFFFFFF):
+        raise ValueError("OTA ativo NEW/PENDING. Por seguranca, instalacao bloqueada.")
+    slot = (active["sequencia"] - 1) % len(APP_OFFSETS)
+    return {"slot": slot, "offset": APP_OFFSETS[slot],
+            "sequencia": active["sequencia"], "estado": active["estado"],
+            "em_branco": False, "registos": records}
+
+
 def parse_flash(data):
     if len(data) != FLASH:
         raise ValueError("Backup incompleto: sao necessarios exatamente 16 MB.")
@@ -88,11 +118,10 @@ def parse_flash(data):
         found[name] = (typ, sub, offset, length)
     if found != expected:
         raise ValueError("Tabela de particoes diferente da LUMI validada. Nao gravar.")
-    version = check_app(data[APP_OFFSET:APP_OFFSET + 512])
+    ota = select_ota(data[OTA_DATA_OFFSET:OTA_DATA_OFFSET + OTA_DATA_LENGTH])
+    version = check_app(data[ota["offset"]:ota["offset"] + 512])
     if version not in ("2.5.1", "2.5.2", "2.5.3"):
         raise ValueError("Versao atual nao autorizada: " + version)
-    if data[0xd000:0xf000] != b"\xff" * 0x2000:
-        raise ValueError("OTA data nao vazia. O slot ativo pode ser ota_1: instalacao bloqueada.")
     count, checksum, length = struct.unpack_from("<III", data, ASSETS_OFFSET)
     if not 1 <= count <= 4096 or count * 44 > length or length > ASSETS_LENGTH - 12:
         raise ValueError("Formato de recursos (GIFs) nao reconhecido.")
@@ -124,8 +153,13 @@ def parse_flash(data):
         "gifs_identificados": len(gifs),
         "nomes_dos_gifs": gifs[:30],
         "checksum_recursos": "OK",
-        "otadata_em_branco": True,
-        "escrita_permitida_apenas_em": "0x20000 - imagem de aplicacao",
+        "otadata_em_branco": ota["em_branco"],
+        "ota_ativo": "ota_" + str(ota["slot"]),
+        "offset_ativo": hex(ota["offset"]),
+        "estado_ota": str(ota["estado"]),
+        "sequencia_ota": ota["sequencia"],
+        "registos_ota": ota["registos"],
+        "escrita_permitida_apenas_em": hex(ota["offset"]) + " - imagem de aplicacao",
         "observacao": "Backup contem credenciais e deve permanecer no PC."
     }
 

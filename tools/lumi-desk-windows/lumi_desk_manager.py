@@ -437,7 +437,7 @@ class LumiManager:
         expected = expected_path.read_bytes()
         verification = expected_path.parent / "verificacao-temporaria.bin"
         try:
-            self.esp("read-flash", hex(offset), str(len(expected)), verification)
+            self.esp("--after", "no-reset", "read-flash", hex(offset), str(len(expected)), verification)
             if hashlib.sha256(verification.read_bytes()).digest() != hashlib.sha256(expected).digest():
                 raise ValueError("A verificação da gravação falhou. Utiliza REPOSIÇÃO.")
             self.say("Verificação dos bytes gravados: OK.")

@@ -1,0 +1,155 @@
+name: LUMI Hey Quiet Manager Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-hey-quiet-manager-windows-20261024]
+    paths:
+      - 'tools/lumi-desk-windows/**'
+      - '.github/workflows/lumi-hey-quiet-manager-windows.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: lumi-hey-quiet-manager-windows
+  cancel-in-progress: true
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Obter codigo LUMI
+        uses: actions/checkout@v4
+
+      - name: Python para compilar (nao e exigido ao utilizador)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar ferramentas na maquina GitHub
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.16.0 esptool==5.6.0 pyserial pillow
+
+      - name: Obter firmware 2.5.3 compilado e validado
+        uses: actions/download-artifact@v4
+        with:
+          name: LUMI-DESK-HEY-LUMI-QUIET-CANDIDATO
+          repository: TiagoM20/xiaozhi-esp32
+          run-id: 40086844928
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: firmware-original
+
+      - name: Confirmar identidade do firmware
+        shell: pwsh
+        run: |
+          Copy-Item firmware-original/LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin tools/lumi-desk-windows/LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin
+          @'
+          import hashlib
+          from pathlib import Path
+          p = Path('tools/lumi-desk-windows/LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin')
+          actual=hashlib.sha256(p.read_bytes()).hexdigest()
+          expected='01713cabee21dbe33344f05c1cb6b777b703f4c5080ade1567b189b01fe3ee78'
+          assert actual == expected, f'Firmware nao validado: {actual}'
+          print('Firmware de origem verificado:',actual)
+          '@ | Set-Content -Encoding UTF8 validate_firmware.py
+          python validate_firmware.py
+          python -m py_compile tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m unittest discover -s tools/lumi-desk-windows -p test_ota.py -v
+
+      - name: Criar icon LUMI azul e Wi-Fi amarelo
+        shell: pwsh
+        run: |
+          @'
+          from PIL import Image, ImageDraw
+          im=Image.new("RGBA",(256,256),"white")
+          d=ImageDraw.Draw(im)
+          blue="#0668E7"; gold="#FFC107"
+          d.rounded_rectangle((7,7,249,249),radius=52,fill="white",outline="#E0E9F5",width=5)
+          d.line([(44,126),(128,55),(212,126)],fill=blue,width=17,joint="curve")
+          d.line([(60,128),(60,200),(196,200),(196,128)],fill=blue,width=17,joint="curve")
+          d.rounded_rectangle((94,130,112,158),radius=9,fill=blue)
+          d.rounded_rectangle((144,130,162,158),radius=9,fill=blue)
+          d.arc((106,152,155,190),start=10,end=170,fill=blue,width=9)
+          d.rounded_rectangle((176,68,193,116),radius=5,fill=blue)
+          d.arc((176,23,234,78),start=213,end=331,fill=gold,width=8)
+          d.arc((187,37,223,72),start=218,end=320,fill=gold,width=7)
+          d.ellipse((198,63,208,73),fill=gold)
+          im.save('tools/lumi-desk-windows/LUMI-DESK.ico',sizes=[(256,256),(64,64),(48,48),(32,32),(16,16)])
+          '@ | Set-Content -Encoding UTF8 make_icon.py
+          python make_icon.py
+
+      - name: Compilar executavel autonomo de Windows (um unico EXE)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-HEY-Quiet-Manager-v0.3.0 --icon tools/lumi-desk-windows/LUMI-DESK.ico --add-data "tools/lumi-desk-windows/LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do gestor" }
+          if (!(Test-Path dist/LUMI-HEY-Quiet-Manager-v0.3.0.exe)) { throw "Falta o executavel" }
+
+      - name: Teste real do executavel Windows sem ligar ao ESP32
+        shell: pwsh
+        run: |
+          $process=Start-Process -FilePath (Resolve-Path "dist/LUMI-HEY-Quiet-Manager-v0.3.0.exe") -ArgumentList "--self-test", (Join-Path $PWD "self-test.json") -PassThru
+          if (-not $process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw "Timeout self-test" }
+          if ($process.ExitCode -ne 0) { throw "O executavel nao concluiu self-test" }
+          if (!(Test-Path self-test.json)) { throw "Self-test nao criou relatorio" }
+          $report=Get-Content self-test.json -Raw | ConvertFrom-Json
+          if (!$report.candidate_hash_ok -or !$report.esptool_loaded -or !$report.serial_loaded -or $report.version -ne "2.5.3") {
+            throw "Ferramentas ou firmware nao incorporados"
+          }
+          Write-Host "LUMI Manager EXE validado com esptool incorporado"
+          Get-Content self-test.json
+
+      - name: Calcular integridade
+        shell: pwsh
+        run: |
+          $hash=(Get-FileHash dist/LUMI-HEY-Quiet-Manager-v0.3.0.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-HEY-Quiet-Manager-v0.3.0.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-HEY-QUIET.txt
+          Write-Host "SHA256 EXE: $hash"
+
+      - name: Disponibilizar executavel de testes
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HEY-QUIET-MANAGER-WINDOWS-EXE
+          path: |
+            dist/LUMI-HEY-Quiet-Manager-v0.3.0.exe
+            dist/SHA256-LUMI-HEY-QUIET.txt
+          retention-days: 30
+
+      - name: Publicar versao experimental para download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hey-quiet-manager-windows-v0.3.0
+          target_commitish: feature/lumi-hey-quiet-manager-windows-20261024
+          name: LUMI Hey Quiet Manager Windows 0.3.0 - wake experimental
+          prerelease: true
+          make_latest: false
+          body: |
+            Gestor grafico Windows, executavel autonomo para a Waveshare ESP32-S3-Touch-LCD-1.54.
+            LUMI Quiet 2.5.3: sem saudações espontâneas ao despertar; filtra TTS sem STT.
+            Versao experimental HEY LUMI com comando MultiNet6 ingles e limiar inicial 0.50.
+            A linguagem da IA continua em pt-PT e a voz Raquel permanece na consola XiaoZhi.
+            Runtime substitui o comando legado no index.json sem alterar os 21 GIFs.
+            Apos uma pergunta e resposta completa, o microfone nao reabre automaticamente.
+            Falsos despertares podem persistir: esta versao nao tem validacao em hardware nem garante ausencia de chamadas espontaneas.
+            Mantém proteção contra saudações automáticas e cooldown.
+            Faz alternancia de expressões no ecrã em repouso, sem gerar áudio.
+            Raquel PT-PT continua a ser obtida na consola XiaoZhi.
+            Inclui esptool e firmware 2.5.3 aprovado no CI; nao precisa de Python nem pip.
+            Permite diagnostico, backup privado dos 16MB, instalacao guardada e reposicao.
+            Corrige a interpretacao dos dados OTA preenchidos: deteta slot ativo ota_0 ou ota_1 por CRC32 e sequencia.
+            Pode analisar uma copia de backup existente sem voltar a ler a flash.
+            Confirma que o slot ativo nao mudou antes de qualquer gravacao; estados OTA pendentes/corrompidos continuam bloqueados.
+            Bloqueia gravacao se a tabela de particoes, recursos, checksum, chip ou OTA nao passarem.
+            Nunca apaga a flash nem altera de forma deliberada a particao NVS ou a de GIFs.
+            O software nao envia backups ou credenciais para a internet.
+            Nao foi testado fisicamente na DESK; prudencia na instalacao.
+            EXE sem assinatura de codigo Windows; SmartScreen ou antivirus podem bloquear.
+            NAO desative o Windows Defender. Consulte codigo fonte e SHA256 antes de executar.
+          files: |
+            dist/LUMI-HEY-Quiet-Manager-v0.3.0.exe
+            dist/SHA256-LUMI-HEY-QUIET.txt

@@ -382,6 +382,113 @@ builder = replace_once(
 )
 BUILDER.write_text(builder, encoding="utf-8")
 
+# LUMI Quiet single-turn policy: wake, one question, one full answer, return to
+# idle. Do not automatically restart ASR after the answer (a common feedback
+# loop in quiet rooms). Crucially, wait for playback to drain before closing.
+app = replace_once(
+    app,
+    """                    if (GetDeviceState() == kDeviceStateSpeaking) {
+                        lumi_last_speech_end_us_ = esp_timer_get_time();
+                        if (listening_mode_ == kListeningModeManualStop) {
+                            SetDeviceState(kDeviceStateIdle);
+                        } else {
+                            SetDeviceState(kDeviceStateListening);
+                        }
+                    }""",
+    """                    if (GetDeviceState() == kDeviceStateSpeaking) {
+                        // LUMI: finish the entire Raquel audio buffer, then idle.
+                        lumi_finish_after_tts_ = true;
+                        lumi_tts_stop_us_ = esp_timer_get_time();
+                        ESP_LOGI(TAG, "LUMI Quiet: TTS done; waiting for playback drain");
+                    }""",
+    "single-turn stop instead of automatic new listening",
+)
+app = replace_once(
+    app,
+    """        if (bits & MAIN_EVENT_PLAYBACK_DRAINED) {
+            if (audio_service_.IsPlaybackIdle()) {
+                notify_player_.OnPlaybackDrained();
+            }""",
+    """        if (bits & MAIN_EVENT_PLAYBACK_DRAINED) {
+            if (audio_service_.IsPlaybackIdle()) {
+                notify_player_.OnPlaybackDrained();
+            }
+            // Single-turn: never re-enable microphone after Raquel finishes.
+            if (lumi_finish_after_tts_ && GetDeviceState() == kDeviceStateSpeaking &&
+                esp_timer_get_time() - lumi_tts_stop_us_ >= 700000 &&
+                audio_service_.IsPlaybackIdle()) {
+                lumi_finish_after_tts_ = false;
+                lumi_last_speech_end_us_ = esp_timer_get_time();
+                ESP_LOGI(TAG, "LUMI Quiet: answer finished, closing conversation");
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    protocol_->CloseAudioChannel();
+                } else {
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            }""",
+    "finish at playback-drained event",
+)
+app = replace_once(
+    app,
+    """            clock_ticks_++;
+            if (GetDeviceState() == kDeviceStateIdle) {""",
+    """            clock_ticks_++;
+            const int64_t lumi_now_us = esp_timer_get_time();
+            // Some servers report TTS STOP before the last PCM packet arrives.
+            // Require >=700ms stability and an empty output queue. Never
+            // interrupt a still-speaking Raquel.
+            if (lumi_finish_after_tts_ && GetDeviceState() == kDeviceStateSpeaking &&
+                lumi_now_us - lumi_tts_stop_us_ >= 700000 &&
+                audio_service_.IsPlaybackIdle()) {
+                lumi_finish_after_tts_ = false;
+                lumi_last_speech_end_us_ = lumi_now_us;
+                ESP_LOGI(TAG, "LUMI Quiet: answer drained, return to idle");
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    protocol_->CloseAudioChannel();
+                } else {
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            }
+            // Hard safety fallback for false wake with no recognized question.
+            // Does not depend on VAD, playback or a cloud timeout.
+            if (GetDeviceState() == kDeviceStateListening &&
+                !lumi_user_spoke_ && lumi_listening_started_us_ != 0 &&
+                lumi_now_us - lumi_listening_started_us_ >= 12000000) {
+                ESP_LOGW(TAG, "LUMI Quiet: hard 12s no-STT timeout, return to idle");
+                lumi_listening_started_us_ = 0;  // prevent repeated close
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    protocol_->CloseAudioChannel();
+                } else {
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            }
+            if (GetDeviceState() == kDeviceStateIdle) {""",
+    "clock safety and deferred output",
+)
+app = replace_once(
+    app,
+    """    if (new_state == kDeviceStateIdle) {
+        lumi_user_spoke_ = false;
+    }""",
+    """    if (new_state == kDeviceStateIdle) {
+        lumi_user_spoke_ = false;
+        lumi_finish_after_tts_ = false;
+        lumi_listening_started_us_ = 0;
+    }""",
+    "reset single-turn state on idle",
+)
+header = replace_once(
+    header,
+    """    std::atomic<bool> lumi_user_spoke_{false};""",
+    """    std::atomic<bool> lumi_user_spoke_{false};
+    bool lumi_finish_after_tts_ = false;
+    int64_t lumi_tts_stop_us_ = 0;""",
+    "single-turn state fields",
+)
+assert "LUMI Quiet: answer drained, return to idle" in app
+assert "LUMI Quiet: hard 12s no-STT timeout" in app
+assert "lumi_finish_after_tts_" in header
+
 assert "MAIN_EVENT_PLAYBACK_DRAINED" in app, "Loss of upstream playback drain fix"
 assert "audio_service_.IsPlaybackIdle()" in app, "Loss of upstream playback check"
 assert "ShowStartupWakeWordHint()" in app, "Loss of upstream 2.5.3 functionality"
@@ -411,4 +518,4 @@ opts = [item for item in opts if item.split("=", 1)[0] not in overrides]
 opts.extend(f"{k}={v}" for k, v in overrides.items())
 board["builds"][0]["sdkconfig_append"] = opts
 CONFIG.write_text(json.dumps(board, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print("LUMI Quiet 2.5.3 patched: wake no greeting; TTS only after STT; threshold 55; idle faces; silent timeout; pt-PT")
+print("LUMI Quiet 2.5.3 patched: wake no greeting; TTS only after STT; threshold 30; single-turn idle; idle faces; silent timeout; pt-PT")

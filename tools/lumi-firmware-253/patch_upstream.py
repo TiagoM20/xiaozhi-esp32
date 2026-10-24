@@ -407,4 +407,22 @@ opts = [item for item in opts if item.split("=", 1)[0] not in overrides]
 opts.extend(f"{k}={v}" for k, v in overrides.items())
 board["builds"][0]["sdkconfig_append"] = opts
 CONFIG.write_text(json.dumps(board, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print("LUMI Native 2.5.3 patched: WakeNet9 native Hi ESP, no greeting, followup auto listen 15 seconds, idle GIFs, pt-PT")
+# Upgrade the pinned ESP-SR dependency exclusively for the native Portuguese
+# WakeNet10 model, introduced later than ESP-SR 2.4.7.
+component = ROOT / "main/idf_component.yml"
+dep = component.read_text(encoding="utf-8")
+dep = replace_once(dep, "espressif/esp-sr: ==2.4.7", "espressif/esp-sr: ==2.6.0",
+                   "ESP-SR v2.6 Portuguese WakeNet10")
+component.write_text(dep, encoding="utf-8")
+
+# Older XiaoZhi builder rejects any wn10_* model name. Expand this strict
+# validation to allow exactly wn10_pt_olaesp; do not loosen other checks.
+builder = BUILDER.read_text(encoding="utf-8")
+builder = replace_once(builder,
+    '_WAKE_WORD_MODEL_PATTERN = re.compile(r"^wn9[sl]?_[a-z0-9_]+$")',
+    '_WAKE_WORD_MODEL_PATTERN = re.compile(r"^(?:wn9[sl]?_[a-z0-9_]+|wn10_pt_olaesp)$")',
+    "Portuguese WN10 exact allowed model",
+)
+BUILDER.write_text(builder, encoding="utf-8")
+
+print("LUMI Native 2.5.3 patched: WakeNet10 pt-PT Ola ESP, ESP-SR 2.6.0, silent greeting blocked, follow-up 15s")

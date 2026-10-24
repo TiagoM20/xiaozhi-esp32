@@ -1,0 +1,33 @@
+{
+  "profile_version": 1,
+  "display_name": "LUMI DESK",
+  "target": "esp32s3",
+  "board": "waveshare/esp32-s3-touch-lcd-1.54",
+  "language": "pt-PT",
+  "engine": "wakenet10",
+  "primary_wake_word": "Lumi",
+  "accepted_wake_words": [
+    "Lumi"
+  ],
+  "optional_wake_words": {
+    "ola_lumi": false,
+    "hey_lumi": false
+  },
+  "requires_custom_trained_model": true,
+  "model_name": "wn10_pt_lumi",
+  "model_status": "pending_training",
+  "allow_flash_without_model": false,
+  "notify_on_wake": false,
+  "allow_unprompted_tts": false,
+  "followup_seconds": 15,
+  "false_wake_no_stt_timeout_seconds": 6,
+  "preserve_assets": true,
+  "min_original_gifs": 21,
+  "acceptance_criteria": {
+    "genuine_wakes_min_10": 9,
+    "false_wakes_during_30min_family_talk_max": 0,
+    "no_unrequested_speech": true,
+    "tts_followup_without_repeat_wake": true,
+    "restore_available": true
+  }
+}

@@ -484,6 +484,31 @@ class LumiManager:
         except Exception as ex:
             messagebox.showerror("Backup não validado", str(ex))
 
+    def restore_both_from_backup(self, source, report):
+        """Restore app+original assets after failure or by explicit request."""
+        source = Path(source)
+        original = source.read_bytes()
+        if len(original) != FLASH:
+            raise ValueError("Backup nao e uma imagem flash integral de 16MB.")
+        ota = select_ota(original[OTA_DATA_OFFSET:OTA_DATA_OFFSET+OTA_DATA_LENGTH])
+        offset = int(report["offset_ativo"], 16)
+        if ota["offset"] != offset:
+            raise ValueError("Slot OTA do backup nao corresponde ao relatorio.")
+        app = source.parent / "app-original-para-recuperacao.bin"
+        app.write_bytes(original[offset:offset+APP_LENGTH])
+        part = original[ASSETS_OFFSET:ASSETS_OFFSET+ASSETS_LENGTH]
+        files, index = inspect_assets(part)
+        orig_len = struct.unpack_from("<I",part,8)[0]
+        assets = source.parent / "assets-originais-para-recuperacao.bin"
+        assets.write_bytes(part[:12+orig_len])
+        self.say("A recuperar todos os GIFs e o modelo originais.")
+        self.esp("--after","no-reset","write-flash",hex(ASSETS_OFFSET),assets)
+        self.verify_readback(assets,ASSETS_OFFSET)
+        self.say("A recuperar a aplicação original.")
+        self.esp("--after","no-reset","write-flash",hex(offset),app)
+        self.verify_readback(app,offset)
+        self.say("Recuperação completa verificada: app + assets.")
+
     def worker(self, action, port, arg):
         self.current_port = port
         try:

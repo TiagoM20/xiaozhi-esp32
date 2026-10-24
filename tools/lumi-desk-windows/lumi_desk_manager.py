@@ -26,10 +26,10 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-EXPECTED_HASH = "01713cabee21dbe33344f05c1cb6b777b703f4c5080ade1567b189b01fe3ee78"
+EXPECTED_HASH = "2183497fe5780fb98344cc0903bc0953f28a915a239e94cf4b2548c5a0aba189"
 FW_NAME = "LUMI-NATIVE-HI-ESP-app.bin"
 MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
-MODEL_HASH = "PENDING"
+MODEL_HASH = "c20ae0c4b916ab43f557f40517e1d7b01bfac1d82d6fc0275e9aad961db23c00"
 
 
 def resource(name):
@@ -56,7 +56,7 @@ def check_app(data, want=None):
 def check_fw():
     fw = get_fw()
     if not fw.is_file():
-        raise ValueError("Firmware QUIET 2.5.3 nao foi incluido neste executavel.")
+        raise ValueError("Firmware Hi ESP 2.5.3 nao foi incluido neste executavel.")
     data = fw.read_bytes()
     if not 1000000 < len(data) <= APP_LENGTH:
         raise ValueError("Tamanho do firmware invalido.")

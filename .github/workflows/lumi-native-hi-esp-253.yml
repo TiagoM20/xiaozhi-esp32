@@ -49,13 +49,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "Native preset verification:"
+          grep -E '(CONFIG_USE_AFE_WAKE_WORD|CONFIG_SR_WN_WN9_HIESP|CONFIG_SEND_WAKE_WORD_DATA|CONFIG_LANGUAGE_PT_PT)' sdkconfig || true
           grep -Fxq 'CONFIG_USE_AFE_WAKE_WORD=y' sdkconfig
           grep -Fxq 'CONFIG_SR_WN_WN9_HIESP=y' sdkconfig
           grep -Fxq '# CONFIG_SEND_WAKE_WORD_DATA is not set' sdkconfig
           grep -Fxq 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
           grep -Fq 'LUMI Quiet: suppressing automatic greeting' main/application.cc
           grep -Fq 'LUMI Native: hard 12s no-STT timeout' main/application.cc
-          grep -Fq 'LUMI: 15s silence, closing conversation' main/application.cc
+          grep -Fq 'LUMI Quiet: silent listening timeout' main/application.cc
           python3 -c 'import struct,pathlib; b=pathlib.Path("build/generated_assets.bin").read_bytes(); n,c,s=struct.unpack_from("<III",b); p=b[12:12+s]; assert 0<n<1000 and (sum(p)&65535)==c; names=[struct.unpack_from("<32sIIHH",p,i*44)[0].split(bytes([0]),1)[0].decode() for i in range(n)]; assert "srmodels.bin" in names; assert "index.json" in names; print("WakeNet assets:",names)'
           mkdir -p ../firmware-native
           cp build/xiaozhi.bin ../firmware-native/LUMI-NATIVE-HI-ESP-app.bin

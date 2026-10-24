@@ -26,10 +26,10 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-EXPECTED_HASH = "2183497fe5780fb98344cc0903bc0953f28a915a239e94cf4b2548c5a0aba189"
-FW_NAME = "LUMI-NATIVE-HI-ESP-app.bin"
-MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
-MODEL_HASH = "c20ae0c4b916ab43f557f40517e1d7b01bfac1d82d6fc0275e9aad961db23c00"
+EXPECTED_HASH = "PENDING_FW_HASH"
+FW_NAME = "LUMI-OLA-ESP-PORTUGUES-app.bin"
+MODEL_NAME = "LUMI-OLA-ESP-PORTUGUES-model-template.bin"
+MODEL_HASH = "PENDING_MODEL_HASH"
 
 
 def resource(name):
@@ -56,7 +56,7 @@ def check_app(data, want=None):
 def check_fw():
     fw = get_fw()
     if not fw.is_file():
-        raise ValueError("Firmware Hi ESP 2.5.3 nao foi incluido neste executavel.")
+        raise ValueError("Firmware Olá ESP 2.5.3 nao foi incluido neste executavel.")
     data = fw.read_bytes()
     if not 1000000 < len(data) <= APP_LENGTH:
         raise ValueError("Tamanho do firmware invalido.")
@@ -200,7 +200,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | HI ESP Nativo 2.5.3")
+        self.master.title("LUMI DESK | OLÁ ESP Português WakeNet10")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -212,7 +212,7 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="WakeNet9 nativo  •  Hi ESP  •  Raquel PT-PT  •  Seguimento de conversa",
+        tk.Label(top, text="WakeNet10 português  •  Olá ESP  •  Raquel PT-PT  •  Seguimento de conversa",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
         tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
@@ -236,7 +236,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR HI ESP NATIVO 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR OLÁ ESP PORTUGUÊS 2.5.3", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
@@ -541,7 +541,7 @@ class LumiManager:
                     if not self.choose("Instalação nativa Hi ESP",
                         "Backup integral confirmado.\n"
                         + str(changes["gifs_preservados"]) + " GIFs preservados sem alterações.\n\n"
-                        "Wake word: Hi ESP (WakeNet9 nativo).\n"
+                        "Wake word: Olá ESP (WakeNet10 português).\n"
                         "Raquel continua PT-PT, com seguimento durante cerca de 15s.\n\n"
                         "ATENÇÃO: esta instalação grava DUAS partições:\n"
                         "• App: " + report["ota_ativo"] + " (" + report["offset_ativo"] + ")\n"
@@ -568,8 +568,8 @@ class LumiManager:
                                                    +". NÃO desligues USB. Backup: "+str(source))
                             raise RuntimeError("Instalação falhou mas backup app+assets foi reposto.")
                         self.events.put(("ok",
-                            "Hi ESP instalado e verificado.\n"
-                            "Reinicia a DESK e diz 'Hi ESP'.\n"
+                            "Olá ESP instalado e verificado.\n"
+                            "Reinicia a DESK e diz 'Olá ESP'.\n"
                             "Depois de responder, Raquel continua a escutar."))
             elif action == "restore":
                 original = Path(arg)

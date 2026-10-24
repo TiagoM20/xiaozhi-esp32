@@ -1,0 +1,38 @@
+name: LUMI only WakeNet Model Safety
+
+on:
+  push:
+    branches: [feature/lumi-only-wake-model-20261024]
+    paths:
+      - 'tools/lumi-firmware-253/lumi_wake_profile.json'
+      - 'tools/lumi-firmware-253/validate_lumi_model.py'
+      - 'tools/lumi-firmware-253/test_validate_lumi_model.py'
+      - '.github/workflows/lumi-only-wake-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Lumi wake safety logic
+        shell: bash
+        run: |
+          python -m unittest discover -s tools/lumi-firmware-253 -p 'test_validate_lumi_model.py' -v
+          python -m json.tool tools/lumi-firmware-253/lumi_wake_profile.json >/dev/null
+      - name: Missing trained model must prevent flashing
+        shell: bash
+        run: |
+          set +e
+          python tools/lumi-firmware-253/validate_lumi_model.py --model-root /tmp > missing-model-check.log 2>&1
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          grep -Fq 'DO NOT BUILD OR FLASH' missing-model-check.log
+          echo 'PASS: firmware without real Lumi model is blocked'

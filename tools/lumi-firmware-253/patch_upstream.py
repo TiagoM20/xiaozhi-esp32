@@ -349,12 +349,39 @@ custom = replace_once(
     custom,
     "    multinet_->set_det_threshold(multinet_model_data_, threshold_);",
     """    // LUMI Quiet: apply known sensitivity irrespective of older asset-pack threshold.
-    // The ESP-SR MultiNet score must exceed 0.30 to activate.
-    threshold_ = 0.30f;
+    // The ESP-SR MultiNet English score must exceed 0.50 to activate.
+    threshold_ = 0.50f;
     ESP_LOGI(TAG, "LUMI Quiet: wake threshold %.2f", threshold_);
     multinet_->set_det_threshold(multinet_model_data_, threshold_);""",
     "multinet sensitivity",
 )
+# ESP-SR MultiNet6 loads COMMANDS from assets/index.json, rather than the
+# Kconfig custom word, whenever models_list is supplied. Existing LUMI assets
+# contain the old "ola lumi" entry along with 21 face GIFs: do NOT replace them.
+# Override command vocabulary at runtime AFTER the old index is parsed,
+# BEFORE registering commands with esp_mn_commands_update().
+custom = replace_once(
+    custom,
+    """        ParseWakenetModelConfig();
+    }
+
+    if (models_ == nullptr || models_->num == -1) {""",
+    """        ParseWakenetModelConfig();
+        // LUMI Hey: keep the existing flash assets but replace the
+        // legacy Portuguese-in-English command with English "HEY LUMI".
+        language_ = "en";
+        commands_.clear();
+        commands_.push_back({"HEY LUMI", "Hey Lumi", "wake"});
+        ESP_LOGI(TAG, "LUMI Hey: MultiNet6 command vocabulary set to HEY LUMI");
+    }
+
+    if (models_ == nullptr || models_->num == -1) {""",
+    "runtime MultiNet custom command loaded from existing index",
+)
+# Fail closed: do not accidentally ship a firmware which still configures
+# the old phrase from the assets index.
+assert 'commands_.push_back({"HEY LUMI", "Hey Lumi", "wake"})' in custom
+
 app_file_wake.write_text(custom, encoding="utf-8")
 
 header = replace_once(
@@ -507,9 +534,9 @@ overrides = {
     "CONFIG_USE_ESP_WAKE_WORD": "n",
     "CONFIG_USE_AFE_WAKE_WORD": "n",
     "CONFIG_USE_CUSTOM_WAKE_WORD": "y",
-    "CONFIG_CUSTOM_WAKE_WORD": '"ola lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_DISPLAY": '"Olá Lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "30",
+    "CONFIG_CUSTOM_WAKE_WORD": '"hey lumi"',
+    "CONFIG_CUSTOM_WAKE_WORD_DISPLAY": '"Hey Lumi"',
+    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "50",
     "CONFIG_SEND_WAKE_WORD_DATA": "n",
     "CONFIG_SR_MN_CN_NONE": "y",
     "CONFIG_SR_MN_EN_MULTINET6_QUANT": "y",
@@ -518,4 +545,4 @@ opts = [item for item in opts if item.split("=", 1)[0] not in overrides]
 opts.extend(f"{k}={v}" for k, v in overrides.items())
 board["builds"][0]["sdkconfig_append"] = opts
 CONFIG.write_text(json.dumps(board, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print("LUMI Quiet 2.5.3 patched: wake no greeting; TTS only after STT; threshold 30; single-turn idle; idle faces; silent timeout; pt-PT")
+print("LUMI HEY 2.5.3 patched: Hey Lumi command runtime, threshold 0.50, no spontaneous greeting, one-turn response, idle faces, pt-PT Raquel cloud")

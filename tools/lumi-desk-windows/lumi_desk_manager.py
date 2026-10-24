@@ -558,20 +558,17 @@ class LumiManager:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 if meta.get("mac") != mac or meta.get("sha256_backup") != hashlib.sha256(data).hexdigest():
                     raise ValueError("A cópia não pertence a esta placa ou foi alterada.")
-                if not self.choose("Confirmar recuperação",
-                    "Repor a aplicação " + report["versao_atual"]
-                    + " desta cópia?\nApenas " + report["ota_ativo"]
-                    + " (" + report["offset_ativo"] + ") será escrita.\n"
-                    "Recursos e configurações permanecem intactos."):
+                if not self.choose("Recuperação completa",
+                    "Repor a aplicação " + report["versao_atual"] + " e todos os assets?\n"
+                    "• Aplicação original: " + report["ota_ativo"] + "\n"
+                    "• GIFs e modelo originais: 0x800000\n"
+                    "Wi-Fi e definições NVS ficam intactas.\n\n"
+                    "Confirma a recuperação completa?"):
                     self.say("Reposição cancelada.")
                 else:
-                    app = original.parent / "aplicacao-original-recuperada.bin"
-                    offset = int(report["offset_ativo"], 16)
                     self.verify_ota_unchanged(original)
-                    app.write_bytes(data[offset:offset + APP_LENGTH])
-                    self.esp("write-flash", hex(offset), app)
-                    self.verify_readback(app, offset)
-                    self.events.put(("ok", "Aplicação anterior reposta e verificada.\n"
+                    self.restore_both_from_backup(original, report)
+                    self.events.put(("ok","Aplicação e todos os assets restaurados.\n"
                                      "Reinicia a LUMI DESK."))
             else:
                 raise ValueError("Operação desconhecida.")

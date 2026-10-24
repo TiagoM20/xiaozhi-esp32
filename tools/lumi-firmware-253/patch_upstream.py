@@ -315,6 +315,20 @@ app = replace_once(
     """            clock_ticks_++;
             // Only timeout a fully enabled microphone""",
     """            clock_ticks_++;
+            const int64_t lumi_now_us = esp_timer_get_time();
+            // A noisy room can keep VAD active without any recognized STT.
+            // Bound an unconfirmed wake to 12 seconds in all circumstances.
+            if (GetDeviceState() == kDeviceStateListening && !lumi_user_spoke_ &&
+                lumi_listening_started_us_ != 0 &&
+                lumi_now_us - lumi_listening_started_us_ >= 12000000) {
+                ESP_LOGW(TAG, "LUMI Native: hard 12s no-STT timeout");
+                lumi_listening_started_us_ = 0;
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    protocol_->CloseAudioChannel();
+                } else {
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            }
             if (GetDeviceState() == kDeviceStateIdle) {
                 lumi_idle_seconds_++;
                 if (lumi_idle_seconds_ % 90 == 0) {
@@ -368,6 +382,7 @@ builder = replace_once(
 )
 BUILDER.write_text(builder, encoding="utf-8")
 
+assert "LUMI Native: hard 12s no-STT timeout" in app
 assert "MAIN_EVENT_PLAYBACK_DRAINED" in app, "Loss of upstream playback drain fix"
 assert "audio_service_.IsPlaybackIdle()" in app, "Loss of upstream playback check"
 assert "ShowStartupWakeWordHint()" in app, "Loss of upstream 2.5.3 functionality"

@@ -16,6 +16,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from native_assets import merge as merge_native_assets, parse as inspect_assets
 
 FLASH = 0x1000000
 APP_OFFSET = 0x20000
@@ -25,13 +26,19 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-EXPECTED_HASH = "01713cabee21dbe33344f05c1cb6b777b703f4c5080ade1567b189b01fe3ee78"
-FW_NAME = "LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin"
+EXPECTED_HASH = "2183497fe5780fb98344cc0903bc0953f28a915a239e94cf4b2548c5a0aba189"
+FW_NAME = "LUMI-NATIVE-HI-ESP-app.bin"
+MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
+MODEL_HASH = "c20ae0c4b916ab43f557f40517e1d7b01bfac1d82d6fc0275e9aad961db23c00"
+
+
+def resource(name):
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return root / name
 
 
 def get_fw():
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return root / FW_NAME
+    return resource(FW_NAME)
 
 
 def check_app(data, want=None):
@@ -49,13 +56,21 @@ def check_app(data, want=None):
 def check_fw():
     fw = get_fw()
     if not fw.is_file():
-        raise ValueError("Firmware QUIET 2.5.3 nao foi incluido neste executavel.")
+        raise ValueError("Firmware Hi ESP 2.5.3 nao foi incluido neste executavel.")
     data = fw.read_bytes()
     if not 1000000 < len(data) <= APP_LENGTH:
         raise ValueError("Tamanho do firmware invalido.")
     check_app(data, "2.5.3")
     if hashlib.sha256(data).hexdigest() != EXPECTED_HASH:
         raise ValueError("O firmware nao corresponde ao binario aprovado no GitHub.")
+    template = resource(MODEL_NAME)
+    if not template.is_file() or hashlib.sha256(template.read_bytes()).hexdigest() != MODEL_HASH:
+        raise ValueError("Modelo WakeNet nativo ausente ou nao validado.")
+    files, index = inspect_assets(template.read_bytes())
+    if index.get("srmodels") != "srmodels.bin" or "srmodels.bin" not in files:
+        raise ValueError("WakeNet nao encontrado no pacote nativo.")
+    if "multinet_model" in index:
+        raise ValueError("Modelo nativo ainda contem MultiNet; bloqueado.")
     return data
 
 
@@ -185,7 +200,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | HEY LUMI Quiet 2.5.3")
+        self.master.title("LUMI DESK | HI ESP Nativo 2.5.3")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -197,7 +212,7 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="HEY LUMI Quiet 2.5.3  •  Raquel PT-PT  •  Resposta única",
+        tk.Label(top, text="WakeNet9 nativo  •  Hi ESP  •  Raquel PT-PT  •  Seguimento de conversa",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
         tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
@@ -221,7 +236,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR HEY LUMI QUIET 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR HI ESP NATIVO 2.5.3", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
@@ -248,7 +263,7 @@ class LumiManager:
         self.refresh_ports()
         try:
             check_fw()
-            self.say("Firmware QUIET 2.5.3 validado por SHA256 e formato ESP-IDF.")
+            self.say("Firmware nativo Hi ESP e modelo validados por SHA256.")
         except Exception as err:
             self.say("ATENÇÃO: " + str(err))
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
@@ -422,7 +437,7 @@ class LumiManager:
         expected = expected_path.read_bytes()
         verification = expected_path.parent / "verificacao-temporaria.bin"
         try:
-            self.esp("read-flash", hex(offset), str(len(expected)), verification)
+            self.esp("--after", "no-reset", "read-flash", hex(offset), str(len(expected)), verification)
             if hashlib.sha256(verification.read_bytes()).digest() != hashlib.sha256(expected).digest():
                 raise ValueError("A verificação da gravação falhou. Utiliza REPOSIÇÃO.")
             self.say("Verificação dos bytes gravados: OK.")
@@ -469,6 +484,31 @@ class LumiManager:
         except Exception as ex:
             messagebox.showerror("Backup não validado", str(ex))
 
+    def restore_both_from_backup(self, source, report):
+        """Restore app+original assets after failure or by explicit request."""
+        source = Path(source)
+        original = source.read_bytes()
+        if len(original) != FLASH:
+            raise ValueError("Backup nao e uma imagem flash integral de 16MB.")
+        ota = select_ota(original[OTA_DATA_OFFSET:OTA_DATA_OFFSET+OTA_DATA_LENGTH])
+        offset = int(report["offset_ativo"], 16)
+        if ota["offset"] != offset:
+            raise ValueError("Slot OTA do backup nao corresponde ao relatorio.")
+        app = source.parent / "app-original-para-recuperacao.bin"
+        app.write_bytes(original[offset:offset+APP_LENGTH])
+        part = original[ASSETS_OFFSET:ASSETS_OFFSET+ASSETS_LENGTH]
+        files, index = inspect_assets(part)
+        orig_len = struct.unpack_from("<I",part,8)[0]
+        assets = source.parent / "assets-originais-para-recuperacao.bin"
+        assets.write_bytes(part[:12+orig_len])
+        self.say("A recuperar todos os GIFs e o modelo originais.")
+        self.esp("--after","no-reset","write-flash",hex(ASSETS_OFFSET),assets)
+        self.verify_readback(assets,ASSETS_OFFSET)
+        self.say("A recuperar a aplicação original.")
+        self.esp("--after","no-reset","write-flash",hex(offset),app)
+        self.verify_readback(app,offset)
+        self.say("Recuperação completa verificada: app + assets.")
+
     def worker(self, action, port, arg):
         self.current_port = port
         try:
@@ -487,23 +527,50 @@ class LumiManager:
                                      + "\n\nNão foi feita qualquer gravação."))
                 else:
                     fw = get_fw()
-                    if not self.choose("Confirmar instalação",
-                        "A cópia de segurança integral foi validada.\n\n"
-                        "Versão anterior: " + report["versao_atual"] + "\n"
-                        "Nova versão: HEY LUMI QUIET 2.5.3\n\n"
-                        "Vamos gravar APENAS a aplicação em " + report["ota_ativo"]
-                        + " (" + report["offset_ativo"] + ").\n"
-                        "As definições e GIFs não serão alterados.\n\n"
-                        "Queres instalar a nova versão?"):
-                        self.say("Instalação cancelada. O backup foi mantido.")
+                    self.say("A combinar WakeNet nativo com os GIFs originais.")
+                    old = source.read_bytes()
+                    old_assets = old[ASSETS_OFFSET:ASSETS_OFFSET+ASSETS_LENGTH]
+                    new_assets, changes = merge_native_assets(
+                        old_assets, resource(MODEL_NAME).read_bytes())
+                    merged_path = folder / "assets-com-wakenet-e-gifs-originais.bin"
+                    merged_path.write_bytes(new_assets)
+                    (folder / "verificacao-recursos.json").write_text(
+                        json.dumps(changes,ensure_ascii=False,indent=2),encoding="utf-8")
+                    self.say("GIFs preservados: " + str(changes["gifs_preservados"]))
+                    self.say("Restantes recursos preservados: " + str(changes["recursos_preservados"]))
+                    if not self.choose("Instalação nativa Hi ESP",
+                        "Backup integral confirmado.\n"
+                        + str(changes["gifs_preservados"]) + " GIFs preservados sem alterações.\n\n"
+                        "Wake word: Hi ESP (WakeNet9 nativo).\n"
+                        "Raquel continua PT-PT, com seguimento durante cerca de 15s.\n\n"
+                        "ATENÇÃO: esta instalação grava DUAS partições:\n"
+                        "• App: " + report["ota_ativo"] + " (" + report["offset_ativo"] + ")\n"
+                        "• Recursos: assets (0x800000), com os GIFs originais.\n"
+                        "Existe backup integral para repor ambas.\n\n"
+                        "Confirmas a instalação experimental?"):
+                        self.say("Instalação cancelada: nada gravado.")
                     else:
-                        offset = int(report["offset_ativo"], 16)
+                        offset = int(report["offset_ativo"],16)
                         self.verify_ota_unchanged(source)
-                        self.say("A gravar APENAS a imagem da aplicação em " + report["offset_ativo"])
-                        self.esp("write-flash", hex(offset), fw)
-                        self.verify_readback(fw, offset)
-                        self.events.put(("ok", "Firmware HEY LUMI QUIET 2.5.3 gravado e verificado.\n"
-                                         "Reinicia a DESK e testa a Raquel e o 'Olá Lumi'."))
+                        try:
+                            self.say("Fase 1/2: escrever assets repacotados com WakeNet.")
+                            self.esp("--after","no-reset","write-flash",hex(ASSETS_OFFSET),merged_path)
+                            self.verify_readback(merged_path,ASSETS_OFFSET)
+                            self.say("Fase 2/2: atualizar aplicação.")
+                            self.esp("--after","no-reset","write-flash",hex(offset),fw)
+                            self.verify_readback(fw,offset)
+                        except Exception as error:
+                            self.say("Gravação interrompida: " + str(error))
+                            try:
+                                self.restore_both_from_backup(source,report)
+                            except Exception as rollback:
+                                raise RuntimeError("RECUPERAÇÃO NÃO CONFIRMADA: "+str(rollback)
+                                                   +". NÃO desligues USB. Backup: "+str(source))
+                            raise RuntimeError("Instalação falhou mas backup app+assets foi reposto.")
+                        self.events.put(("ok",
+                            "Hi ESP instalado e verificado.\n"
+                            "Reinicia a DESK e diz 'Hi ESP'.\n"
+                            "Depois de responder, Raquel continua a escutar."))
             elif action == "restore":
                 original = Path(arg)
                 if original.name != "flash-integral-16MB.bin":
@@ -516,20 +583,17 @@ class LumiManager:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 if meta.get("mac") != mac or meta.get("sha256_backup") != hashlib.sha256(data).hexdigest():
                     raise ValueError("A cópia não pertence a esta placa ou foi alterada.")
-                if not self.choose("Confirmar recuperação",
-                    "Repor a aplicação " + report["versao_atual"]
-                    + " desta cópia?\nApenas " + report["ota_ativo"]
-                    + " (" + report["offset_ativo"] + ") será escrita.\n"
-                    "Recursos e configurações permanecem intactos."):
+                if not self.choose("Recuperação completa",
+                    "Repor a aplicação " + report["versao_atual"] + " e todos os assets?\n"
+                    "• Aplicação original: " + report["ota_ativo"] + "\n"
+                    "• GIFs e modelo originais: 0x800000\n"
+                    "Wi-Fi e definições NVS ficam intactas.\n\n"
+                    "Confirma a recuperação completa?"):
                     self.say("Reposição cancelada.")
                 else:
-                    app = original.parent / "aplicacao-original-recuperada.bin"
-                    offset = int(report["offset_ativo"], 16)
                     self.verify_ota_unchanged(original)
-                    app.write_bytes(data[offset:offset + APP_LENGTH])
-                    self.esp("write-flash", hex(offset), app)
-                    self.verify_readback(app, offset)
-                    self.events.put(("ok", "Aplicação anterior reposta e verificada.\n"
+                    self.restore_both_from_backup(original, report)
+                    self.events.put(("ok","Aplicação e todos os assets restaurados.\n"
                                      "Reinicia a LUMI DESK."))
             else:
                 raise ValueError("Operação desconhecida.")

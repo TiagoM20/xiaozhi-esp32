@@ -343,20 +343,6 @@ header = replace_once(
     "quiet state fields",
 )
 assert "std::atomic" in header, "Missing STT atomic marker"
-app_file_wake = ROOT / "main/audio/wake_words/custom_wake_word.cc"
-custom = app_file_wake.read_text(encoding="utf-8")
-custom = replace_once(
-    custom,
-    "    multinet_->set_det_threshold(multinet_model_data_, threshold_);",
-    """    // LUMI Quiet: apply known sensitivity irrespective of older asset-pack threshold.
-    // The ESP-SR MultiNet score must exceed 0.30 to activate.
-    threshold_ = 0.30f;
-    ESP_LOGI(TAG, "LUMI Quiet: wake threshold %.2f", threshold_);
-    multinet_->set_det_threshold(multinet_model_data_, threshold_);""",
-    "multinet sensitivity",
-)
-app_file_wake.write_text(custom, encoding="utf-8")
-
 header = replace_once(
     header,
     "    bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)",
@@ -398,17 +384,12 @@ overrides = {
     "CONFIG_USE_SERVER_AEC": "n",
     "CONFIG_WAKE_WORD_DISABLED": "n",
     "CONFIG_USE_ESP_WAKE_WORD": "n",
-    "CONFIG_USE_AFE_WAKE_WORD": "n",
-    "CONFIG_USE_CUSTOM_WAKE_WORD": "y",
-    "CONFIG_CUSTOM_WAKE_WORD": '"ola lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_DISPLAY": '"Olá Lumi"',
-    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD": "30",
+    "CONFIG_USE_AFE_WAKE_WORD": "y",
+    "CONFIG_USE_CUSTOM_WAKE_WORD": "n",
     "CONFIG_SEND_WAKE_WORD_DATA": "n",
-    "CONFIG_SR_MN_CN_NONE": "y",
-    "CONFIG_SR_MN_EN_MULTINET6_QUANT": "y",
 }
 opts = [item for item in opts if item.split("=", 1)[0] not in overrides]
 opts.extend(f"{k}={v}" for k, v in overrides.items())
 board["builds"][0]["sdkconfig_append"] = opts
 CONFIG.write_text(json.dumps(board, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print("LUMI Quiet 2.5.3 patched: wake no greeting; TTS only after STT; threshold 55; idle faces; silent timeout; pt-PT")
+print("LUMI Native 2.5.3 patched: WakeNet9 native Hi ESP, no greeting, followup auto listen 15 seconds, idle GIFs, pt-PT")

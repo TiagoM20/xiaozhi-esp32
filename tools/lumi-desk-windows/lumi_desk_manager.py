@@ -26,7 +26,7 @@ OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
 EXPECTED_HASH = "b106009a78d3fa8dc5642411a5da94d68a553419f1ac15ad0a8e3bf0bcfe4ec3"
-FW_NAME = "LUMI-DESK-2.5.3-QUIET-WAKE-FIX-app.bin"
+FW_NAME = "LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin"
 
 
 def get_fw():
@@ -185,7 +185,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | QUIET Wake Fix 2.5.3")
+        self.master.title("LUMI DESK | HEY LUMI Quiet 2.5.3")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -197,7 +197,7 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="QUIET Wake Fix 2.5.3  •  Olá Lumi  •  Raquel PT-PT",
+        tk.Label(top, text="HEY LUMI Quiet 2.5.3  •  Raquel PT-PT  •  Resposta única",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
         tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
@@ -221,7 +221,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR QUIET WAKE FIX 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR HEY LUMI QUIET 2.5.3", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
@@ -490,7 +490,7 @@ class LumiManager:
                     if not self.choose("Confirmar instalação",
                         "A cópia de segurança integral foi validada.\n\n"
                         "Versão anterior: " + report["versao_atual"] + "\n"
-                        "Nova versão: QUIET 2.5.3\n\n"
+                        "Nova versão: HEY LUMI QUIET 2.5.3\n\n"
                         "Vamos gravar APENAS a aplicação em " + report["ota_ativo"]
                         + " (" + report["offset_ativo"] + ").\n"
                         "As definições e GIFs não serão alterados.\n\n"
@@ -502,7 +502,7 @@ class LumiManager:
                         self.say("A gravar APENAS a imagem da aplicação em " + report["offset_ativo"])
                         self.esp("write-flash", hex(offset), fw)
                         self.verify_readback(fw, offset)
-                        self.events.put(("ok", "Firmware QUIET 2.5.3 gravado e verificado.\n"
+                        self.events.put(("ok", "Firmware HEY LUMI QUIET 2.5.3 gravado e verificado.\n"
                                          "Reinicia a DESK e testa a Raquel e o 'Olá Lumi'."))
             elif action == "restore":
                 original = Path(arg)

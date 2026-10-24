@@ -16,6 +16,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from native_assets import merge as merge_native_assets, parse as inspect_assets
 
 FLASH = 0x1000000
 APP_OFFSET = 0x20000
@@ -26,7 +27,9 @@ OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
 EXPECTED_HASH = "01713cabee21dbe33344f05c1cb6b777b703f4c5080ade1567b189b01fe3ee78"
-FW_NAME = "LUMI-DESK-2.5.3-HEY-LUMI-QUIET-app.bin"
+FW_NAME = "LUMI-NATIVE-HI-ESP-app.bin"
+MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
+MODEL_HASH = "PENDING"
 
 
 def get_fw():
@@ -185,7 +188,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | HEY LUMI Quiet 2.5.3")
+        self.master.title("LUMI DESK | HI ESP Nativo 2.5.3")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -197,7 +200,7 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="HEY LUMI Quiet 2.5.3  •  Raquel PT-PT  •  Resposta única",
+        tk.Label(top, text="WakeNet9 nativo  •  Hi ESP  •  Raquel PT-PT  •  Seguimento de conversa",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
         tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
@@ -221,7 +224,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR HEY LUMI QUIET 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR HI ESP NATIVO 2.5.3", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
@@ -248,7 +251,7 @@ class LumiManager:
         self.refresh_ports()
         try:
             check_fw()
-            self.say("Firmware QUIET 2.5.3 validado por SHA256 e formato ESP-IDF.")
+            self.say("Firmware nativo Hi ESP e modelo validados por SHA256.")
         except Exception as err:
             self.say("ATENÇÃO: " + str(err))
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")

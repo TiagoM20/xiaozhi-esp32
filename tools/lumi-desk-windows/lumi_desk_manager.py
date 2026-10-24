@@ -32,9 +32,13 @@ MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
 MODEL_HASH = "PENDING"
 
 
-def get_fw():
+def resource(name):
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return root / FW_NAME
+    return root / name
+
+
+def get_fw():
+    return resource(FW_NAME)
 
 
 def check_app(data, want=None):
@@ -59,6 +63,14 @@ def check_fw():
     check_app(data, "2.5.3")
     if hashlib.sha256(data).hexdigest() != EXPECTED_HASH:
         raise ValueError("O firmware nao corresponde ao binario aprovado no GitHub.")
+    template = resource(MODEL_NAME)
+    if not template.is_file() or hashlib.sha256(template.read_bytes()).hexdigest() != MODEL_HASH:
+        raise ValueError("Modelo WakeNet nativo ausente ou nao validado.")
+    files, index = inspect_assets(template.read_bytes())
+    if index.get("srmodels") != "srmodels.bin" or "srmodels.bin" not in files:
+        raise ValueError("WakeNet nao encontrado no pacote nativo.")
+    if "multinet_model" in index:
+        raise ValueError("Modelo nativo ainda contem MultiNet; bloqueado.")
     return data
 
 

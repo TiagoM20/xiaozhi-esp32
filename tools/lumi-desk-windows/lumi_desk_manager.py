@@ -502,23 +502,50 @@ class LumiManager:
                                      + "\n\nNão foi feita qualquer gravação."))
                 else:
                     fw = get_fw()
-                    if not self.choose("Confirmar instalação",
-                        "A cópia de segurança integral foi validada.\n\n"
-                        "Versão anterior: " + report["versao_atual"] + "\n"
-                        "Nova versão: HEY LUMI QUIET 2.5.3\n\n"
-                        "Vamos gravar APENAS a aplicação em " + report["ota_ativo"]
-                        + " (" + report["offset_ativo"] + ").\n"
-                        "As definições e GIFs não serão alterados.\n\n"
-                        "Queres instalar a nova versão?"):
-                        self.say("Instalação cancelada. O backup foi mantido.")
+                    self.say("A combinar WakeNet nativo com os GIFs originais.")
+                    old = source.read_bytes()
+                    old_assets = old[ASSETS_OFFSET:ASSETS_OFFSET+ASSETS_LENGTH]
+                    new_assets, changes = merge_native_assets(
+                        old_assets, resource(MODEL_NAME).read_bytes())
+                    merged_path = folder / "assets-com-wakenet-e-gifs-originais.bin"
+                    merged_path.write_bytes(new_assets)
+                    (folder / "verificacao-recursos.json").write_text(
+                        json.dumps(changes,ensure_ascii=False,indent=2),encoding="utf-8")
+                    self.say("GIFs preservados: " + str(changes["gifs_preservados"]))
+                    self.say("Restantes recursos preservados: " + str(changes["recursos_preservados"]))
+                    if not self.choose("Instalação nativa Hi ESP",
+                        "Backup integral confirmado.\n"
+                        + str(changes["gifs_preservados"]) + " GIFs preservados sem alterações.\n\n"
+                        "Wake word: Hi ESP (WakeNet9 nativo).\n"
+                        "Raquel continua PT-PT, com seguimento durante cerca de 15s.\n\n"
+                        "ATENÇÃO: esta instalação grava DUAS partições:\n"
+                        "• App: " + report["ota_ativo"] + " (" + report["offset_ativo"] + ")\n"
+                        "• Recursos: assets (0x800000), com os GIFs originais.\n"
+                        "Existe backup integral para repor ambas.\n\n"
+                        "Confirmas a instalação experimental?"):
+                        self.say("Instalação cancelada: nada gravado.")
                     else:
-                        offset = int(report["offset_ativo"], 16)
+                        offset = int(report["offset_ativo"],16)
                         self.verify_ota_unchanged(source)
-                        self.say("A gravar APENAS a imagem da aplicação em " + report["offset_ativo"])
-                        self.esp("write-flash", hex(offset), fw)
-                        self.verify_readback(fw, offset)
-                        self.events.put(("ok", "Firmware HEY LUMI QUIET 2.5.3 gravado e verificado.\n"
-                                         "Reinicia a DESK e testa a Raquel e o 'Olá Lumi'."))
+                        try:
+                            self.say("Fase 1/2: escrever assets repacotados com WakeNet.")
+                            self.esp("--after","no-reset","write-flash",hex(ASSETS_OFFSET),merged_path)
+                            self.verify_readback(merged_path,ASSETS_OFFSET)
+                            self.say("Fase 2/2: atualizar aplicação.")
+                            self.esp("--after","no-reset","write-flash",hex(offset),fw)
+                            self.verify_readback(fw,offset)
+                        except Exception as error:
+                            self.say("Gravação interrompida: " + str(error))
+                            try:
+                                self.restore_both_from_backup(source,report)
+                            except Exception as rollback:
+                                raise RuntimeError("RECUPERAÇÃO NÃO CONFIRMADA: "+str(rollback)
+                                                   +". NÃO desligues USB. Backup: "+str(source))
+                            raise RuntimeError("Instalação falhou mas backup app+assets foi reposto.")
+                        self.events.put(("ok",
+                            "Hi ESP instalado e verificado.\n"
+                            "Reinicia a DESK e diz 'Hi ESP'.\n"
+                            "Depois de responder, Raquel continua a escutar."))
             elif action == "restore":
                 original = Path(arg)
                 if original.name != "flash-integral-16MB.bin":

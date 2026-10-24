@@ -1,0 +1,79 @@
+name: LUMI Wake Monitor - Windows (sem flash)
+on:
+  workflow_dispatch:
+  push:
+    branches: [tool/lumi-wake-diagnostics-windows-20261024]
+    paths:
+      - 'tools/lumi-desk-windows/lumi_wake_monitor.py'
+      - '.github/workflows/lumi-wake-monitor-windows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wake-monitor:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ferramentas apenas no GitHub
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.16.0 pyserial==3.5
+      - name: Testar o analisador sem hardware
+        shell: pwsh
+        run: |
+          python -m py_compile tools/lumi-desk-windows/lumi_wake_monitor.py
+          python tools/lumi-desk-windows/lumi_wake_monitor.py --self-test check.json
+          $test=Get-Content check.json -Raw | ConvertFrom-Json
+          if (!$test.selftest -or $test.mode -ne 'read-only' -or $test.private_transcripts_saved) { throw "Self-test falhou" }
+      - name: Compilar executavel sem instalador e sem firmware
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-Despertares-Diagnostico-0.1.0 --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_wake_monitor.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha de compilacao" }
+      - name: Executar e testar EXE real no Windows
+        shell: pwsh
+        run: |
+          $outfile=(Join-Path $PWD "executable-self-test.json")
+          $p=Start-Process -FilePath (Resolve-Path dist/LUMI-Despertares-Diagnostico-0.1.0.exe) -ArgumentList "--self-test", $outfile -PassThru
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "Self-test timeout" }
+          if ($p.ExitCode -ne 0 -or !(Test-Path $outfile)) { throw "O executavel falhou" }
+          $result=Get-Content $outfile -Raw | ConvertFrom-Json
+          if (!$result.selftest -or $result.mode -ne "read-only") { throw "Resultado invalido" }
+          Get-Content $outfile
+      - name: Hash SHA256
+        shell: pwsh
+        run: |
+          $hash=(Get-FileHash dist/LUMI-Despertares-Diagnostico-0.1.0.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-Despertares-Diagnostico-0.1.0.exe" | Out-File -Encoding ascii dist/SHA256.txt
+      - name: Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-DESPERTARES-DIAGNOSTICO-WINDOWS
+          path: |
+            dist/LUMI-Despertares-Diagnostico-0.1.0.exe
+            dist/SHA256.txt
+      - name: Publicacao experimental
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-wake-monitor-v0.1.0
+          target_commitish: tool/lumi-wake-diagnostics-windows-20261024
+          name: LUMI Despertares Diagnostico Windows V0.1.0
+          prerelease: true
+          make_latest: false
+          body: |
+            Ferramenta grafica de diagnostico para Waveshare ESP32-S3, por COM a 115200.
+            SOMENTE leitura do registo serial; nenhum comando de gravacao, flash ou apagamento.
+            Exibe detecoes MultiNet com confianca, mudancas de estado, e despertares sem MultiNet anterior.
+            Omite transcricoes, rede e credenciais do relatorio gerado em Documents/LUMI-DESK/Diagnosticos.
+            Requer que o LUMI Desk Manager anterior esteja fechado para libertar a porta COM.
+            Nao modifica firmware nem resolve os falsos despertares por si so.
+            Executavel nao assinado digitalmente: nao desative protecoes Windows para executar.
+          files: |
+            dist/LUMI-Despertares-Diagnostico-0.1.0.exe
+            dist/SHA256.txt

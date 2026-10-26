@@ -754,6 +754,8 @@ public final class MainActivity extends Activity {
         add(contents,button("Gerir conteúdos da LUMI",false,()->{
             page="Biblioteca";draw();
         }),10);
+        add(contents,button("Preparar contexto para XiaoZhi",false,
+            this::copyLumiContextToXiaoZhi),8);
         add(stage,contents,12);
 
         LinearLayout maintain=panel();
@@ -991,6 +993,39 @@ public final class MainActivity extends Activity {
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(picker,PICK_FLOORPLAN);
+    }
+
+
+    private void copyLumiContextToXiaoZhi(){
+        StringBuilder context=new StringBuilder();
+        context.append("Contexto opcional LUMI DESK (português de Portugal).\n");
+        context.append("Estes dados foram guardados localmente pelo utilizador.\n");
+        for(MemoryDb.Item item:memories.all()){
+            context.append("\nMemória: ").append(item.title).append("\n")
+                .append(item.detail).append("\n");
+            if(context.length()>9000)break;
+        }
+        for(String kind:new String[]{"Historia","Personagem"}){
+            for(LumiLibraryDb.Entry entry:library.all(kind)){
+                context.append("\n").append(kind).append(": ")
+                    .append(entry.title).append("\n")
+                    .append(entry.content).append("\n");
+                if(context.length()>9000)break;
+            }
+        }
+        if(context.length()>11000)context.setLength(11000);
+        final String text=context.toString();
+        new AlertDialog.Builder(this)
+            .setTitle("Enviar conteúdos para o XiaoZhi?")
+            .setMessage("Será copiado texto para a área de transferência do Android "
+                +"e aberta a consola XiaoZhi. Nada é enviado automaticamente. "
+                +"Revê os dados antes de os colares no agente.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Copiar e abrir",(d,w)->{
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText("Contexto LUMI",text));
+                openExternal("https://xiaozhi.me/console/agents");
+            }).show();
     }
 
     private void editXiaoZhiPersonality() {

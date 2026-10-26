@@ -37,6 +37,8 @@
             android:exported="false" />
         <activity android:name=".CameraRoomActivity"
             android:exported="false" />
+        <activity android:name=".HomeAssistantActivity"
+            android:exported="false" />
         <receiver android:name=".ScreenLockAdmin"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">

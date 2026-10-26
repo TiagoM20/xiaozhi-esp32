@@ -20,6 +20,7 @@ import android.widget.TextView;
 public final class LumiCorePairActivity extends Activity {
     private SharedPreferences prefs;
     private TextView status;
+    private TextView networkReport;
     private LinearLayout root;
     private TextView text(String message,int size,int color){
         TextView t=new TextView(this);t.setText(message);t.setTextColor(color);
@@ -68,11 +69,33 @@ public final class LumiCorePairActivity extends Activity {
             "ativos quando o Windows está desligado. As chaves cloud são enviadas cifradas "+
             "e ficam no Android Keystore.",14,0xffbfcadd));
         status=text("",14,0xffa9e6e0);root.addView(status);
+        networkReport=text("",13,0xffbfcadd);root.addView(networkReport);
         button("Ativar ligação ao Windows",()->{
             prefs.edit().putBoolean("lumi_core_sync_enabled",true).commit();
             LumiCoreSyncServer.pairingKey(this);
             restartCentral();refresh();
             status.postDelayed(this::refresh,1200);
+        });
+        button("Diagnosticar ligação CORE sem PC",()->{
+            networkReport.setText("A testar a rede local do tablet...");
+            new Thread(()->{
+                String report=LumiCoreNetworkDiagnostics.report(
+                    getApplicationContext());
+                runOnUiThread(()->{
+                    if(!isFinishing())networkReport.setText(report);
+                });
+            },"LumiCoreNetworkTest").start();
+        });
+        button("Copiar diagnóstico (sem chaves)",()->{
+            String report=networkReport.getText().toString();
+            if(report.isEmpty()){
+                networkReport.setText("Executa primeiro o diagnóstico.");
+                return;
+            }
+            ClipboardManager clipboard=(ClipboardManager)
+                getSystemService(Context.CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText("LUMI CORE diagnóstico sem credenciais",report));
         });
         button("Copiar código privado de emparelhamento",()->{
             if(!prefs.getBoolean("lumi_core_sync_enabled",false)){

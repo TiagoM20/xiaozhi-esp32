@@ -28,6 +28,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -63,7 +64,7 @@ public final class MainActivity extends Activity {
     private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
-    private final String[] navItems = {"Casa", "Lumi", "Biblioteca"};
+    private final String[] navItems = {"Casa", "Dispositivos", "Lumi"};
     private String page = "Casa";
     private String activeDevice = "tv";
     private LinearLayout stage;
@@ -77,6 +78,7 @@ public final class MainActivity extends Activity {
     private LumiLibraryDb library;
     private String libraryTab = "Histórias";
     private static final int PICK_MEMORY_JSON = 9441;
+    private static final int PICK_FLOORPLAN = 9442;
     private final android.os.Handler weatherHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable weatherTick = new Runnable() {
@@ -220,6 +222,21 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==PICK_FLOORPLAN && resultCode==RESULT_OK && data!=null){
+            Uri chosen=data.getData();
+            if(chosen!=null){
+                try{
+                    getContentResolver().takePersistableUriPermission(chosen,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    getSharedPreferences("hub",MODE_PRIVATE).edit()
+                        .putString("house_floorplan_uri",chosen.toString()).apply();
+                    page="Planta";draw();
+                }catch(Exception error){
+                    notice("Planta da casa","Não foi possível guardar o acesso à imagem.");
+                }
+            }
+            return;
+        }
         if (requestCode != PICK_MEMORY_JSON || resultCode != RESULT_OK || data == null) return;
         try (InputStream input = getContentResolver().openInputStream(data.getData());
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -303,6 +320,8 @@ public final class MainActivity extends Activity {
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Lumi".equals(page)) drawLumi();
         else if ("Biblioteca".equals(page)) drawLibrary();
+        else if ("Pessoas".equals(page)) drawPeople();
+        else if ("Planta".equals(page)) drawFloorplan();
         else if ("Definições".equals(page)) drawSettings();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
@@ -361,7 +380,7 @@ public final class MainActivity extends Activity {
         TextView lumi = label("LUMI", 12, WHITE, true);
         lumi.setGravity(Gravity.CENTER);
         add(sidebar, lumi, 4);
-        String[] symbols = {"⌂", "◉", "▤"};
+        String[] symbols = {"⌂", "▦", "◉"};
         for (int i = 0; i < navItems.length; i++) {
             final String name = navItems[i];
             boolean selected = name.equals(page);
@@ -462,8 +481,7 @@ public final class MainActivity extends Activity {
             if (!isFinishing() && "Casa".equals(page)) draw();
         });
         LinearLayout topControls=horizontal();
-        TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
-        addWeighted(topControls,homeLabel,1,0);
+        addWeighted(topControls,new TextView(this),1,0);
         topControls.addView(button("Apagar ecrã",false,this::screenOff));
         add(stage,topControls,1);
 
@@ -478,7 +496,7 @@ public final class MainActivity extends Activity {
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("CASA · REBORDOSA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
+        hero.addView(label("A TUA CASA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -525,16 +543,9 @@ public final class MainActivity extends Activity {
         add(noticePanel,label("●   TV DA SALA    ·    " +
             (savedIp().isEmpty()?"Por configurar":"Ligação por verificar"),
             12,savedIp().isEmpty()?GOLD:CYAN,false),8);
-        add(noticePanel,label("●   TAB 15    ·    " + battery() + "% de bateria",
+        add(noticePanel,label("●   " + android.os.Build.MODEL + "    ·    " + battery() + "% de bateria",
             12,GREEN,false),8);
-        LinearLayout shortcuts=horizontal();
-        addWeighted(shortcuts,button("Dispositivos",false,()->{
-            page="Dispositivos";activeDevice="tv";draw();
-        }),1,0);
-        addWeighted(shortcuts,button("Spotify",false,()->{
-            page="Dispositivos";activeDevice="spotify";draw();
-        }),1,7);
-        add(noticePanel,shortcuts,10);
+        add(noticePanel,label("Equipamentos: abre os cartões para controlar.",12,MUTED,false),10);
         addOverview(top,noticePanel,11);
         add(stage,top,12);
 
@@ -549,7 +560,7 @@ public final class MainActivity extends Activity {
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        String[] favorites={"lumi","tv","vacuum","camera_sala","tablet","camera"};
+        String[] favorites={"tv","vacuum","camera_sala","camera","ac","spotify"};
         int index=0;
         for(String key:favorites) {
             for(HomeDevices.Device device:HomeDevices.ALL) {
@@ -561,7 +572,14 @@ public final class MainActivity extends Activity {
         }
         add(stage,grid,11);
 
-        add(stage,label("Toca num cartão para gerir o equipamento.",12,MUTED,false),12);
+        LinearLayout quick=horizontal();
+        addWeighted(quick,button("◉  Pessoas da casa",true,()->{
+            page="Pessoas";draw();
+        }),1,0);
+        addWeighted(quick,button("▤  Planta da casa",false,()->{
+            page="Planta";draw();
+        }),1,8);
+        add(stage,quick,16);
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {
@@ -657,7 +675,7 @@ public final class MainActivity extends Activity {
         entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         add(form,entry,11);
-        add(form,label("O token fica no armazenamento privado do Tab 15. Não o publiques no GitHub.",12,MUTED,false),7);
+        add(form,label("O token fica no armazenamento privado deste dispositivo. Não o publiques no GitHub.",12,MUTED,false),7);
         new AlertDialog.Builder(this).setTitle("LUMI DESK · Voz e MCP")
             .setView(form)
             .setNeutralButton("Remover ligação",(dialog,which)->{
@@ -702,30 +720,32 @@ public final class MainActivity extends Activity {
         add(info,label("Raquel PT-PT · Agente XiaoZhi",14,CYAN,true),7);
         add(info,label("A personalidade e a voz reais são configuradas no XiaoZhi. "
             +"O tablet não altera a conta sem uma integração autorizada.",13,MUTED,false),7);
-        add(info,button("Abrir consola XiaoZhi",true,
+        add(info,button("Configurar voz e agente no XiaoZhi",true,
             ()->openExternal("https://xiaozhi.me/console/agents")),11);
         add(stage,info,13);
 
+        LinearLayout personality=panel();
+        personality.addView(label("Personalidade da LUMI",18,WHITE,true));
+        add(personality,label("Prepara as instruções aqui e aplica-as na consola oficial.",13,MUTED,false),6);
+        add(personality,button("Editar rascunho de personalidade",false,
+            this::editXiaoZhiPersonality),9);
+        add(stage,personality,12);
+
         LinearLayout contents=panel();
         contents.addView(label("Histórias e memórias",18,WHITE,true));
-        add(contents,label("Rascunhos guardados localmente no Blackview.",13,MUTED,false),6);
-        add(contents,button("Abrir biblioteca",false,()->{
+        add(contents,label("Histórias, personagens e memórias locais destinadas à DESK.",13,MUTED,false),6);
+        add(contents,button("Gerir conteúdos da LUMI",false,()->{
             page="Biblioteca";draw();
         }),10);
         add(stage,contents,12);
 
         LinearLayout maintain=panel();
         maintain.addView(label("Firmware e manutenção",18,WHITE,true));
-        add(maintain,label("Instalações, backups e recuperação num clique "
-            +"pelo gestor Windows opcional. A wake word «Lumi» continua pendente.",13,MUTED,false),7);
+        add(maintain,label("Backups e recuperação no gestor Windows opcional. "
+            +"A wake word «Lumi» continua pendente.",13,MUTED,false),7);
         add(maintain,button("Ferramentas de manutenção",false,this::showDeskMaintenance),9);
         add(stage,maintain,12);
 
-        LinearLayout activity=panel();
-        activity.addView(label("Diagnóstico da DESK",18,WHITE,true));
-        add(activity,button("Ver histórico local",false,()->
-            startActivity(new Intent(this,DeskLogActivity.class))),10);
-        add(stage,activity,12);
     }
 
     private void showDeskMaintenance() {
@@ -745,7 +765,7 @@ public final class MainActivity extends Activity {
 
 
     private void drawLibrary() {
-        heading("Biblioteca","Histórias, personagens e memórias locais.");
+        heading("Conteúdos da LUMI","Histórias, personagens e memórias locais.");
         LinearLayout tabs=horizontal();
         for(String tab:new String[]{"Histórias","Personagens","Memórias"}) {
             addWeighted(tabs,button(tab,tab.equals(libraryTab),()->{
@@ -753,6 +773,9 @@ public final class MainActivity extends Activity {
             }),1,"Histórias".equals(tab)?0:5);
         }
         add(stage,tabs,12);
+        add(stage,button("‹  Voltar à LUMI DESK",false,()->{
+            page="Lumi";draw();
+        }),8);
         if("Memórias".equals(libraryTab)){
             drawMemories();
             return;
@@ -820,6 +843,114 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+
+    private void showTabletStatus() {
+        notice("Este dispositivo",
+            android.os.Build.MANUFACTURER+" "+android.os.Build.MODEL
+            +" · Bateria: "+battery()+"% · "+serviceText());
+    }
+
+    private void drawPeople() {
+        heading("Pessoas da casa","Telemóveis e localização voluntária.");
+        LinearLayout intro=panel();
+        intro.addView(label("As pessoas da casa",20,WHITE,true));
+        add(intro,label("A localização não é recolhida pelo HUB. "
+            +"O Google Find Hub abre separadamente na conta autorizada. "
+            +"O Home Assistant poderá disponibilizar estados mais tarde.",13,MUTED,false),8);
+        add(stage,intro,12);
+        String[] defaults={"Deolinda","Tiago","Leonardo"};
+        for(int i=0;i<defaults.length;i++){
+            final int index=i;
+            SharedPreferences prefs=getSharedPreferences("hub",MODE_PRIVATE);
+            String name=prefs.getString("person_name_"+i,defaults[i]);
+            LinearLayout card=panel();
+            card.addView(label("●  "+name,20,WHITE,true));
+            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
+            add(card,button("Editar nome",false,()->{
+                EditText edit=new EditText(this);
+                edit.setSingleLine(true);
+                edit.setText(name);
+                new AlertDialog.Builder(this).setTitle("Nome da pessoa")
+                    .setView(edit).setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Guardar",(d,w)->{
+                        String value=edit.getText().toString().trim();
+                        if(!value.isEmpty() && value.length()<=60){
+                            prefs.edit().putString("person_name_"+index,value).apply();
+                            draw();
+                        }
+                    }).show();
+            }),7);
+            add(stage,card,10);
+        }
+    }
+
+    private void drawFloorplan() {
+        heading("Planta da casa","Vista gráfica das divisões.");
+        LinearLayout panel=panel();
+        panel.addView(label("Planta da casa",19,WHITE,true));
+        String image=getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("house_floorplan_uri","");
+        if(!image.isEmpty()){
+            ImageView imageView=new ImageView(this);
+            imageView.setAdjustViewBounds(true);
+            imageView.setMaxHeight(dp(landscape()?500:360));
+            imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            try{imageView.setImageURI(Uri.parse(image));}
+            catch(Exception error){notice("Planta da casa","Imagem inacessível.");}
+            add(panel,imageView,8);
+        }
+        add(panel,label("Quando existir uma planta da tua casa e ligação ao Home Assistant, "
+            +"poderemos sobrepor comandos reais de equipamentos por divisão. "
+            +"Ainda não existe qualquer localização ou controlo fictício.",13,MUTED,false),9);
+        LinearLayout rooms=horizontal();
+        for(String room:new String[]{"Sala","Cozinha","Quartos"}){
+            TextView view=label(room,14,currentPalette.tileText,true);
+            view.setGravity(Gravity.CENTER);
+            view.setPadding(dp(8),dp(28),dp(8),dp(28));
+            view.setBackground(borderFill(currentPalette.tileA,13,currentPalette.tileBorder));
+            addWeighted(rooms,view,1,6);
+        }
+        if(image.isEmpty())add(panel,rooms,13);
+        add(panel,button(image.isEmpty()?"Escolher imagem da planta":
+            "Substituir planta",true,this::selectFloorplan),13);
+        add(stage,panel,12);
+    }
+
+    private void selectFloorplan(){
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,PICK_FLOORPLAN);
+    }
+
+    private void editXiaoZhiPersonality() {
+        SharedPreferences pref=getSharedPreferences("hub",MODE_PRIVATE);
+        EditText draft=new EditText(this);
+        draft.setMinLines(6);
+        draft.setText(pref.getString("xiaozhi_personality_draft",""));
+        draft.setHint("Personalidade e instruções da LUMI...");
+        new AlertDialog.Builder(this)
+            .setTitle("Personalidade · rascunho")
+            .setMessage("A edição local não altera a conta XiaoZhi.")
+            .setView(draft)
+            .setNegativeButton("Cancelar",null)
+            .setNeutralButton("Copiar e abrir XiaoZhi",(d,w)->{
+                String value=draft.getText().toString();
+                pref.edit().putString("xiaozhi_personality_draft",value).apply();
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText("Personalidade LUMI",value));
+                openExternal("https://xiaozhi.me/console/agents");
+            })
+            .setPositiveButton("Guardar rascunho",(d,w)->{
+                pref.edit().putString("xiaozhi_personality_draft",
+                    draft.getText().toString()).apply();
+                notice("Guardado","Texto local, não sincronizado com XiaoZhi.");
+            }).show();
+    }
+
     private void drawSettings() {
         heading("Definições","Ligações, atualizações e manutenção.");
         LinearLayout updates=panel();
@@ -844,15 +975,12 @@ public final class MainActivity extends Activity {
         add(stage,home,12);
         LinearLayout advanced=panel();
         advanced.addView(label("Ferramentas e dispositivos",18,WHITE,true));
-        add(advanced,button("Todos os dispositivos",false,()->{
-            page="Dispositivos";draw();
-        }),8);
+        add(advanced,button("Estado deste dispositivo",false,this::showTabletStatus),8);
         add(advanced,button("Manutenção da DESK (Windows)",false,this::showDeskMaintenance),7);
-        add(advanced,button("Ligação CORE Windows (legado)",false,()->
-            startActivity(new Intent(this,LumiCorePairActivity.class))),7);
-        add(advanced,button("Estado do tablet",false,()->{
-            activeDevice="tablet";page="Dispositivos";draw();
-        }),7);
+        // Ponte antiga removida da navegação principal; firmware e backups
+        // continuam no gestor CORE Windows, independente do HUB Android.
+        add(advanced,button("Histórico técnico da ponte (local)",false,()->
+            startActivity(new Intent(this,DeskLogActivity.class))),7);
         add(stage,advanced,12);
     }
 
@@ -864,15 +992,18 @@ public final class MainActivity extends Activity {
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        for(int i=0;i<HomeDevices.ALL.length;i++){
-            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        int index=0;
+        for(HomeDevices.Device item:HomeDevices.ALL){
+            if(item.key.startsWith("phone_") || "lumi".equals(item.key)
+                || "tablet".equals(item.key)) continue;
+            addHomeTile(grid,item,index++,cols);
         }
         add(stage,grid,11);
     }
 
     private void drawSelectedDevice() {
         if("tv".equals(activeDevice)) tvDetails();
-        else if("lumi".equals(activeDevice)) lumiDetails();
+        else if("lumi".equals(activeDevice)) drawLumi();
         else if("tablet".equals(activeDevice)) tabletDetails();
         else if("camera".equals(activeDevice)) cameraDetails();
         else if("camera_sala".equals(activeDevice)) cameraRoomDetails();
@@ -885,7 +1016,7 @@ public final class MainActivity extends Activity {
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
             "A integração depende da marca e do protocolo Wi-Fi ou infravermelhos. Mantemos o equipamento no painel.");
         else if("plug".equals(activeDevice)) placeholderDetails("Tomada inteligente",
-            "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
+            "Ainda não foi instalada. A gestão automática depende de uma tomada integrada.");
         else placeholderDetails("Espaço para novos dispositivos",
             "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
     }
@@ -893,9 +1024,9 @@ public final class MainActivity extends Activity {
     private void cameraRoomDetails() {
         LinearLayout card=detail();
         card.addView(label("Câmara da Sala",23,WHITE,true));
-        add(card,label("TAB 15 · CÂMARA LOCAL",13,CYAN,true),7);
+        add(card,label("CÂMARA DESTE DISPOSITIVO",13,CYAN,true),7);
         add(card,label("A imagem aparece apenas quando abres a pré-visualização. Não existe gravação, transmissão em rede nem acesso remoto à câmara.",13,MUTED,false),9);
-        add(card,button("Ver câmara do tablet",true,this::openRoomCamera),13);
+        add(card,button("Escolher câmara frontal ou traseira",true,this::openRoomCamera),13);
         add(card,label("O Android poderá pedir autorização para utilizar a câmara. Esta autorização é diferente da Câmara da Varanda.",12,MUTED,false),10);
         add(stage,card,16);
     }
@@ -939,7 +1070,7 @@ public final class MainActivity extends Activity {
                     Intent request=new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                     request.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,admin);
                     request.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Permitir ao LUMI Hub apagar o ecrã do Tab 15 quando pressionares o botão.");
+                        "Permitir ao LUMI Hub apagar o ecrã deste dispositivo.");
                     startActivityForResult(request,ADMIN_REQUEST);
                 }).show();
             return;
@@ -1068,7 +1199,7 @@ public final class MainActivity extends Activity {
         mac.setHint("MAC da TV (AA:BB:CC:DD:EE:FF)");
         mac.setText(p.getString("tv_mac",""));
         add(form,mac,11);
-        add(form,label("O endereço IP e o MAC ficam guardados apenas no Tab 15.",12,
+        add(form,label("O endereço IP e o MAC ficam guardados apenas neste dispositivo.",12,
             Color.rgb(91,96,110),false),7);
         new AlertDialog.Builder(this).setTitle("TV da Sala • Rede")
             .setView(form).setNegativeButton("Cancelar",null)
@@ -1202,7 +1333,7 @@ public final class MainActivity extends Activity {
     }
     private void tabletDetails() {
         LinearLayout c=detail();
-        c.addView(label("Blackview Tab 15",23,WHITE,true));
+        c.addView(label(android.os.Build.MANUFACTURER+" "+android.os.Build.MODEL,23,WHITE,true));
         add(c,label("Central LUMI Hub • Android",13,GREEN,true),7);
         add(c,label(battery()+"%",44,WHITE,true),11);
         add(c,label(charging()?"A carregar":"A funcionar com bateria",14,MUTED,false),4);
@@ -1210,15 +1341,14 @@ public final class MainActivity extends Activity {
         add(c,button(serviceRunning()?"Parar central":"Iniciar central",
             true,this::switchService),10);
         add(c,button("Ver logs e diagnóstico",false,this::diagnostics),8);
-        add(c,button("Apagar ecrã do Tab 15",false,this::screenOff),8);
-        add(c,label("Gestão futura da bateria: ligar a 40%, desligar a 80%. "
-            +"Sem tomada inteligente, a aplicação apenas monitoriza.",13,MUTED,false),14);
+        add(c,button("Apagar ecrã deste dispositivo",false,this::screenOff),8);
+        add(c,label("A gestão de energia depende das capacidades deste dispositivo.",13,MUTED,false),14);
         add(stage,c,16);
     }
 
     private void drawMemories() {
         if(!"Biblioteca".equals(page))
-            heading("Memórias","Informações que decides guardar no Tab 15.");
+            heading("Memórias","Informações guardadas apenas neste dispositivo.");
         LinearLayout c=detail();
         c.addView(label(memories.count()+" memórias guardadas",20,WHITE,true));
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "
@@ -1301,8 +1431,8 @@ public final class MainActivity extends Activity {
     private void drawThemeSelector() {
         LinearLayout intro=panel();
         intro.addView(label("Escolhe o ambiente da tua casa",20,WHITE,true));
-        add(intro,label("Ao tocares num tema, as cores da Home, dos tiles e dos "
-            +"restantes ecrãs mudam de imediato. A escolha fica guardada no Tab 15.",
+        add(intro,label("Ao escolheres um tema, as cores da Casa e dos cartões "
+            +"mudam de imediato. Fica guardado neste dispositivo.",
             13,MUTED,false),7);
         add(stage,intro,14);
         GridLayout grid=new GridLayout(this);

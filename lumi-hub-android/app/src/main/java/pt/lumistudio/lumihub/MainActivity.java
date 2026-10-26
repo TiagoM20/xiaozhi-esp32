@@ -8,6 +8,8 @@ import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.Manifest;
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -476,7 +478,7 @@ public final class MainActivity extends Activity {
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("LUMI HOME",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
+        hero.addView(label("CASA · REBORDOSA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -538,35 +540,28 @@ public final class MainActivity extends Activity {
 
         LinearLayout heading=horizontal();
         LinearLayout words=vertical();
-        words.addView(label("A MINHA CASA",20,WHITE,true));
-        add(words,label("Todos os equipamentos e acessos num só lugar",12,MUTED,false),3);
+        words.addView(label("EQUIPAMENTOS FAVORITOS",20,WHITE,true));
+        add(words,label("O essencial, sem menus técnicos",12,MUTED,false),3);
         addWeighted(heading,words,1,0);
-        heading.addView(label("11 + espaço extra",11,CYAN,false));
+        heading.addView(button("Ver todos",false,()->{page="Dispositivos";draw();}));
         add(stage,heading,17);
 
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        for(int i=0;i<HomeDevices.ALL.length;i++) {
-            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        String[] favorites={"lumi","tv","vacuum","camera_sala","tablet","camera"};
+        int index=0;
+        for(String key:favorites) {
+            for(HomeDevices.Device device:HomeDevices.ALL) {
+                if(key.equals(device.key)) {
+                    addHomeTile(grid,device,index++,cols);
+                    break;
+                }
+            }
         }
         add(stage,grid,11);
 
-        LinearLayout controls=panel();
-        controls.addView(label("TV DA SALA  ·  CONTROLOS RÁPIDOS",12,CYAN,true));
-        LinearLayout buttons=horizontal();
-        addWeighted(buttons,button("Vol. +",false,
-            ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
-        addWeighted(buttons,button("Vol. −",false,
-            ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
-        addWeighted(buttons,button("YouTube",false,
-            ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
-        addWeighted(buttons,button("Desligar",false,
-            ()->tvCommand("ssap://system/turnOff",false)),1,7);
-        add(controls,buttons,12);
-        tvFeedback=label("TV da Sala · " + lastTv(),12,MUTED,false);
-        add(controls,tvFeedback,7);
-        add(stage,controls,15);
+        add(stage,label("Toca num cartão para gerir o equipamento.",12,MUTED,false),12);
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {

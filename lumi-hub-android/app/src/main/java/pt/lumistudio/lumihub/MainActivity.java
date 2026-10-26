@@ -816,6 +816,92 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+
+    private void showTabletStatus() {
+        notice("Este dispositivo",
+            android.os.Build.MANUFACTURER+" "+android.os.Build.MODEL
+            +" · Bateria: "+battery()+"% · "+serviceText());
+    }
+
+    private void drawPeople() {
+        heading("Pessoas da casa","Telemóveis e localização voluntária.");
+        LinearLayout intro=panel();
+        intro.addView(label("As pessoas da casa",20,WHITE,true));
+        add(intro,label("A localização não é recolhida pelo HUB. "
+            +"O Google Find Hub abre separadamente na conta autorizada. "
+            +"O Home Assistant poderá disponibilizar estados mais tarde.",13,MUTED,false),8);
+        add(stage,intro,12);
+        String[] defaults={"Deolinda","Tiago","Leonardo"};
+        for(int i=0;i<defaults.length;i++){
+            final int index=i;
+            SharedPreferences prefs=getSharedPreferences("hub",MODE_PRIVATE);
+            String name=prefs.getString("person_name_"+i,defaults[i]);
+            LinearLayout card=panel();
+            card.addView(label("●  "+name,20,WHITE,true));
+            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
+            add(card,button("Editar nome",false,()->{
+                EditText edit=new EditText(this);
+                edit.setSingleLine(true);
+                edit.setText(name);
+                new AlertDialog.Builder(this).setTitle("Nome da pessoa")
+                    .setView(edit).setNegativeButton("Cancelar",null)
+                    .setPositiveButton("Guardar",(d,w)->{
+                        String value=edit.getText().toString().trim();
+                        if(!value.isEmpty() && value.length()<=60){
+                            prefs.edit().putString("person_name_"+index,value).apply();
+                            draw();
+                        }
+                    }).show();
+            }),7);
+            add(stage,card,10);
+        }
+    }
+
+    private void drawFloorplan() {
+        heading("Planta da casa","Vista gráfica das divisões.");
+        LinearLayout panel=panel();
+        panel.addView(label("Planta interativa · em preparação",19,WHITE,true));
+        add(panel,label("Quando existir uma planta da tua casa e ligação ao Home Assistant, "
+            +"poderemos sobrepor comandos reais de equipamentos por divisão. "
+            +"Ainda não existe qualquer localização ou controlo fictício.",13,MUTED,false),9);
+        LinearLayout rooms=horizontal();
+        for(String room:new String[]{"Sala","Cozinha","Quartos"}){
+            TextView view=label(room,14,currentPalette.tileText,true);
+            view.setGravity(Gravity.CENTER);
+            view.setPadding(dp(8),dp(28),dp(8),dp(28));
+            view.setBackground(borderFill(currentPalette.tileA,13,currentPalette.tileBorder));
+            addWeighted(rooms,view,1,6);
+        }
+        add(panel,rooms,13);
+        add(stage,panel,12);
+    }
+
+    private void editXiaoZhiPersonality() {
+        SharedPreferences pref=getSharedPreferences("hub",MODE_PRIVATE);
+        EditText draft=new EditText(this);
+        draft.setMinLines(6);
+        draft.setText(pref.getString("xiaozhi_personality_draft",""));
+        draft.setHint("Personalidade e instruções da LUMI...");
+        new AlertDialog.Builder(this)
+            .setTitle("Personalidade · rascunho")
+            .setMessage("A edição local não altera a conta XiaoZhi.")
+            .setView(draft)
+            .setNegativeButton("Cancelar",null)
+            .setNeutralButton("Copiar e abrir XiaoZhi",(d,w)->{
+                String value=draft.getText().toString();
+                pref.edit().putString("xiaozhi_personality_draft",value).apply();
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText("Personalidade LUMI",value));
+                openExternal("https://xiaozhi.me/console/agents");
+            })
+            .setPositiveButton("Guardar rascunho",(d,w)->{
+                pref.edit().putString("xiaozhi_personality_draft",
+                    draft.getText().toString()).apply();
+                notice("Guardado","Texto local, não sincronizado com XiaoZhi.");
+            }).show();
+    }
+
     private void drawSettings() {
         heading("Definições","Ligações, atualizações e manutenção.");
         LinearLayout updates=panel();

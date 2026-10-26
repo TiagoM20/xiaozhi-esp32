@@ -193,6 +193,24 @@ final class HomeAssistantClient {
             new JSONObject().put("entity_id",e.id));
     }
 
+    /** Divisões atribuídas manualmente; nunca inferir a localização do aparelho. */
+    static final String[] ROOMS={"Sala","Cozinha","Quartos","Outra divisão"};
+    static String room(Context ctx,String entityId){
+        if(!allowedEntity(entityId))return "";
+        return ctx.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
+            .getString("room_"+entityId,"");
+    }
+    static void setRoom(Context ctx,String entityId,String room){
+        if(!allowedEntity(entityId))throw new IllegalArgumentException("Entidade inválida.");
+        boolean valid=room==null||room.isEmpty();
+        for(String r:ROOMS)if(r.equals(room))valid=true;
+        if(!valid)throw new IllegalArgumentException("Divisão inválida.");
+        SharedPreferences.Editor edit=ctx.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit();
+        if(room==null||room.isEmpty())edit.remove("room_"+entityId);
+        else edit.putString("room_"+entityId,room);
+        edit.apply();
+    }
+
     static String token(Context ctx){return LumiSecrets.get(ctx,SECRET);}
     private HomeAssistantClient(){}
 }

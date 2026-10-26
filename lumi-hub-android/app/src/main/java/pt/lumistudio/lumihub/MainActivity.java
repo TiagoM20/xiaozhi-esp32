@@ -61,8 +61,8 @@ public final class MainActivity extends Activity {
     private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
-    private final String[] navItems = {"Estação", "Dispositivos", "Memórias", "Atualizações"};
-    private String page = "Estação";
+    private final String[] navItems = {"Casa", "Lumi", "Biblioteca"};
+    private String page = "Casa";
     private String activeDevice = "tv";
     private LinearLayout stage;
     private TextView tvFeedback;
@@ -72,14 +72,16 @@ public final class MainActivity extends Activity {
     private static final int CAMERA_REQUEST=405;
     private static final int ADMIN_REQUEST=406;
     private MemoryDb memories;
+    private LumiLibraryDb library;
+    private String libraryTab = "Histórias";
     private static final int PICK_MEMORY_JSON = 9441;
     private final android.os.Handler weatherHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable weatherTick = new Runnable() {
         @Override public void run() {
-            if ("Estação".equals(page)) {
+            if ("Casa".equals(page)) {
                 RebordosaWeather.refreshIfNeeded(MainActivity.this, () -> {
-                    if (!isFinishing() && "Estação".equals(page)) draw();
+                    if (!isFinishing() && "Casa".equals(page)) draw();
                 });
             }
             weatherHandler.postDelayed(this, 5L * 60L * 1000L);
@@ -92,6 +94,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         memories = new MemoryDb(this);
+        library = new LumiLibraryDb(this);
         seedStarterMemories();
         draw();
     }
@@ -107,6 +110,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if (memories != null) memories.close();
+        if (library != null) library.close();
         super.onDestroy();
     }
 
@@ -282,6 +286,7 @@ public final class MainActivity extends Activity {
 
         // Modo mural: navbar estreita em cima, a largura total para os tiles.
         if (landscape()) topNavigation(root);
+        else portraitHeader(root);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -294,24 +299,40 @@ public final class MainActivity extends Activity {
             dp(landscape()?17:14), dp(20));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
-        else if ("Memórias".equals(page)) drawMemories();
+        else if ("Lumi".equals(page)) drawLumi();
+        else if ("Biblioteca".equals(page)) drawLibrary();
+        else if ("Definições".equals(page)) drawSettings();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
         if (!landscape()) bottomNavigation(root);
+    }
+
+    private void portraitHeader(LinearLayout root) {
+        LinearLayout bar=horizontal();
+        bar.setPadding(dp(17),dp(5),dp(14),dp(5));
+        bar.setBackgroundColor(currentPalette.nav);
+        TextView brand=label("⌂  LUMI HUB",18,WHITE,true);
+        brand.setOnClickListener(v->{page="Casa";draw();});
+        addWeighted(bar,brand,1,0);
+        bar.addView(button("⚙  Definições",false,()->{
+            page="Definições";draw();
+        }));
+        root.addView(bar,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
 
     private void topNavigation(LinearLayout root) {
         LinearLayout bar=horizontal();
         bar.setPadding(dp(18),dp(7),dp(15),dp(7));
         bar.setBackgroundColor(currentPalette.nav);
-        TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
+        TextView brand=label("⌂   LUMI HUB",18,WHITE,true);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        brand.setOnClickListener(v->{page="Estação";draw();});
+        brand.setOnClickListener(v->{page="Casa";draw();});
         addWeighted(bar,brand,1,0);
         for(String name:navItems) {
             final String target=name;
             boolean active=name.equals(page);
-            TextView tab=label("Estação".equals(name)?"Home":name,12,
+            TextView tab=label(name,12,
                 active?WHITE:MUTED,active);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(12),dp(11),dp(12),dp(11));
@@ -323,6 +344,7 @@ public final class MainActivity extends Activity {
             lp.leftMargin=dp(5);
             bar.addView(tab,lp);
         }
+        bar.addView(button("⚙",false,()->{page="Definições";draw();}));
         root.addView(bar, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
@@ -337,7 +359,7 @@ public final class MainActivity extends Activity {
         TextView lumi = label("LUMI", 12, WHITE, true);
         lumi.setGravity(Gravity.CENTER);
         add(sidebar, lumi, 4);
-        String[] symbols = {"⌂", "▦", "◉", "↧"};
+        String[] symbols = {"⌂", "◉", "▤"};
         for (int i = 0; i < navItems.length; i++) {
             final String name = navItems[i];
             boolean selected = name.equals(page);
@@ -435,7 +457,7 @@ public final class MainActivity extends Activity {
     private void drawStation() {
         // A meteorologia actualiza o cartao sem alterar a configuracao.
         RebordosaWeather.refreshIfNeeded(this, () -> {
-            if (!isFinishing() && "Estação".equals(page)) draw();
+            if (!isFinishing() && "Casa".equals(page)) draw();
         });
         LinearLayout topControls=horizontal();
         TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
@@ -1163,7 +1185,7 @@ public final class MainActivity extends Activity {
         }
         add(stage,grid,13);
         add(stage,button("Voltar à Home",true,()->{
-            page="Estação";draw();
+            page="Casa";draw();
         }),12);
     }
 

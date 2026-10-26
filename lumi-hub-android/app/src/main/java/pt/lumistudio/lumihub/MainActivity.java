@@ -1271,7 +1271,7 @@ public final class MainActivity extends Activity {
     }
 
     private void drawUpdates() {
-        heading("Atualizações","Versões, aparência e definições visuais da tua central.");
+        heading("Atualizações","Versões do HUB publicadas no GitHub, incluindo V12.");
         LinearLayout tabs=horizontal();
         addWeighted(tabs,button("Versões",updatesTab.equals("Versões"),()->{
             updatesTab="Versões";draw();
@@ -1289,6 +1289,8 @@ public final class MainActivity extends Activity {
         add(c,label("Versões estáveis e de testes assinadas, claramente identificadas. " +
             "O firmware da LUMI DESK não é instalado por esta opção.",13,MUTED,false),9);
         add(c,button("Procurar atualizações",true,this::loadReleases),14);
+        add(c,button("Abrir versões no GitHub",false,()->openExternal(
+            "https://github.com/TiagoM20/xiaozhi-esp32/releases")),8);
         add(stage,c,16);
         LinearLayout list=vertical();
         list.setId(17331);
@@ -1387,7 +1389,7 @@ public final class MainActivity extends Activity {
             String problem=null;
             try{
                 HttpURLConnection con=(HttpURLConnection)new URL(
-                    "https://api.github.com/repos/TiagoM20/xiaozhi-esp32/releases?per_page=40"
+                    "https://api.github.com/repos/TiagoM20/xiaozhi-esp32/releases?per_page=100"
                 ).openConnection();
                 con.setRequestProperty("Accept","application/vnd.github+json");
                 con.setRequestProperty("User-Agent","LUMI-Hub-Android");
@@ -1402,13 +1404,32 @@ public final class MainActivity extends Activity {
                         String line;
                         while((line=rd.readLine())!=null) {
                             b.append(line);
-                            if(b.length()>512000)
+                            if(b.length()>2000000)
                                 throw new Exception("Resposta excessivamente grande");
                         }
                     }
-                    releases=new JSONArray(b.toString());
+                    JSONArray all=new JSONArray(b.toString());
+                    JSONArray selected=new JSONArray();
+                    for(int i=0;i<all.length();i++) {
+                        JSONObject item=all.optJSONObject(i);
+                        if(item==null||item.optBoolean("draft"))continue;
+                        if(!item.optString("tag_name","").startsWith("lumi-hub-v"))continue;
+                        if(releaseApkUrl(item).isEmpty())continue;
+                        selected.put(item);
+                    }
+                    if(selected.length()==0)throw new Exception("Sem versões HUB na resposta");
+                    releases=selected;
+                    getSharedPreferences("hub",MODE_PRIVATE).edit()
+                        .putString("hub_versions_cache",selected.toString()).apply();
                 }finally{con.disconnect();}
-            }catch(Exception ex){problem=ex.getMessage();}
+            }catch(Exception ex){
+                problem="Falha na consulta GitHub ("+ex.getClass().getSimpleName()+").";
+                try {
+                    String saved=getSharedPreferences("hub",MODE_PRIVATE)
+                        .getString("hub_versions_cache","");
+                    if(!saved.isEmpty())releases=new JSONArray(saved);
+                }catch(Exception ignored){}
+            }
             final JSONArray result=releases;
             final String error=problem;
             runOnUiThread(()->{
@@ -1417,10 +1438,14 @@ public final class MainActivity extends Activity {
                 if(area==null)return;
                 area.removeAllViews();
                 if(error!=null){
-                    add(area,label("Não foi possível consultar as atualizações: "
-                        +error,13,GOLD,false),6);
-                    add(area,button("Tentar novamente",false,this::loadReleases),10);
-                    return;
+                    add(area,label(error+(result==null
+                        ?" Abre as versões oficiais no GitHub."
+                        :" A apresentar a última lista guardada no tablet."),
+                        13,GOLD,false),6);
+                    add(area,button("Tentar novamente",false,this::loadReleases),9);
+                    add(area,button("Ver versões oficiais no GitHub",false,()->
+                        openExternal("https://github.com/TiagoM20/xiaozhi-esp32/releases")),9);
+                    if(result==null)return;
                 }
                 if(result==null) return;
                 java.util.ArrayList<JSONObject> versions=new java.util.ArrayList<>();
@@ -1466,7 +1491,9 @@ public final class MainActivity extends Activity {
                     }
                     add(area,summary,8);
                 }
+                int shown=0;
                 for(JSONObject rel:versions) {
+                    if(shown++>=10)break;
                     String tag=rel.optString("tag_name","");
                     String link=releaseApkUrl(rel);
                     LinearLayout tile=panel();
@@ -1483,8 +1510,13 @@ public final class MainActivity extends Activity {
                             ()->downloadApk(link,tag)),11);
                     add(area,tile,10);
                 }
-                if(versions.isEmpty())
-                    add(area,label("Sem versões Android publicadas.",14,MUTED,false),10);
+                if(versions.isEmpty()){
+                    add(area,label("A lista ainda não está disponível. "
+                        +"As versões V12 encontram-se na página oficial do GitHub.",
+                        14,MUTED,false),10);
+                    add(area,button("Abrir versão HUB 12.8",false,()->openExternal(
+                        "https://github.com/TiagoM20/xiaozhi-esp32/releases/tag/lumi-hub-v0.12.8")),9);
+                }
             });
         },"LumiHubReleases").start();
     }

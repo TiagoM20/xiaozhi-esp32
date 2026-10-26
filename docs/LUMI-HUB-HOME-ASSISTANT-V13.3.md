@@ -2,9 +2,16 @@
 
 ## Implementado no Android
 
-Casa ou Definições > Home Assistant abre o painel de ligação. A app aceita URL base e token de acesso pessoal criado no Home Assistant, valida GET /api/ antes de guardar, encripta o token com Android Keystore e permite descobrir entidades reais com GET /api/states. Mostra light, switch, media_player, vacuum e fan; estados unavailable não têm controlos ativos. As ações são exclusivamente chamadas POST /api/services por lista de serviços permitidos, e o estado volta a ser consultado após cada ação. Confirmar explicitamente antes de iniciar o aspirador. Não usar ações de fechaduras, alarmes ou segurança. A televisão LG direta continua funcional.
+Casa, Dispositivos ou Definições > Home Assistant abre o painel de ligação. A app aceita URL base e token de acesso pessoal criado no Home Assistant, valida GET /api/ antes de guardar, encripta o token com Android Keystore e permite descobrir entidades reais com GET /api/states. Mostra light, switch, media_player, vacuum e fan; estados unavailable não têm controlos ativos. As ações são exclusivamente chamadas POST /api/services por lista de serviços permitidos, e o estado volta a ser consultado após cada ação. Confirmar explicitamente antes de iniciar o aspirador. Não usar ações de fechaduras, alarmes ou segurança. A televisão LG direta continua funcional.
 
 O URL é validado: HTTP apenas em endereços locais IPv4 privados/.local; HTTPS para servidores remotos. A aplicação não envia tokens em redirecionamentos e não partilha credenciais com o GitHub.
+
+## Integração com Casa e Planta
+- Os cartões de entidades reais surgem na página Casa e em Dispositivos, se houver um Home Assistant configurado e acessível.
+- Na página Home Assistant, cada entidade tem a opção `Atribuir divisão`; é uma associação local explícita (Sala, Cozinha, Quartos, Outra divisão). Nunca se infere uma divisão a partir do nome.
+- A Planta apresenta os equipamentos associados a divisões e abre a respetiva lista de controlos quando o utilizador toca na divisão ou entidade.
+- A imagem da planta continua configurável como antes. Sobrepor marcadores arrastáveis diretamente sobre a imagem fica para uma versão posterior, após validar o funcionamento no A55 e no Blackview.
+- Esta associação local não altera a configuração do Home Assistant e não cria equipamentos fictícios.
 
 ## Necessário antes de testar em casa
 
@@ -12,7 +19,7 @@ O URL é validado: HTTP apenas em endereços locais IPv4 privados/.local; HTTPS 
 2. Android na rede que alcança o Home Assistant.
 3. No perfil Home Assistant, Segurança > criar Long-Lived Access Token; NÃO enviar o token por chat.
 4. No HUB, abrir Home Assistant e indicar por exemplo http://homeassistant.local:8123 (apenas se for realmente o endereço local correto) e o token.
-5. Testar e guardar; consultar estados, identificar a entidade da TV ou aspirador e testar um comando.
+5. Testar e guardar; consultar estados, identificar uma entidade realmente disponível, atribuir-lhe divisão e testar um comando.
 6. A TV e o aspirador apenas aparecerão se houver integrações reais configuradas no HA.
 
 ## Ligação de voz com XiaoZhi

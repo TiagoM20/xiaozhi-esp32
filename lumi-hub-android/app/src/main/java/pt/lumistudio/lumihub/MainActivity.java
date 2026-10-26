@@ -28,6 +28,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -77,6 +78,7 @@ public final class MainActivity extends Activity {
     private LumiLibraryDb library;
     private String libraryTab = "Histórias";
     private static final int PICK_MEMORY_JSON = 9441;
+    private static final int PICK_FLOORPLAN = 9442;
     private final android.os.Handler weatherHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable weatherTick = new Runnable() {
@@ -220,6 +222,21 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==PICK_FLOORPLAN && resultCode==RESULT_OK && data!=null){
+            Uri chosen=data.getData();
+            if(chosen!=null){
+                try{
+                    getContentResolver().takePersistableUriPermission(chosen,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    getSharedPreferences("hub",MODE_PRIVATE).edit()
+                        .putString("house_floorplan_uri",chosen.toString()).apply();
+                    page="Planta";draw();
+                }catch(Exception error){
+                    notice("Planta da casa","Não foi possível guardar o acesso à imagem.");
+                }
+            }
+            return;
+        }
         if (requestCode != PICK_MEMORY_JSON || resultCode != RESULT_OK || data == null) return;
         try (InputStream input = getContentResolver().openInputStream(data.getData());
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -871,7 +888,18 @@ public final class MainActivity extends Activity {
     private void drawFloorplan() {
         heading("Planta da casa","Vista gráfica das divisões.");
         LinearLayout panel=panel();
-        panel.addView(label("Planta interativa · em preparação",19,WHITE,true));
+        panel.addView(label("Planta da casa",19,WHITE,true));
+        String image=getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("house_floorplan_uri","");
+        if(!image.isEmpty()){
+            ImageView imageView=new ImageView(this);
+            imageView.setAdjustViewBounds(true);
+            imageView.setMaxHeight(dp(landscape()?500:360));
+            imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            try{imageView.setImageURI(Uri.parse(image));}
+            catch(Exception error){notice("Planta da casa","Imagem inacessível.");}
+            add(panel,imageView,8);
+        }
         add(panel,label("Quando existir uma planta da tua casa e ligação ao Home Assistant, "
             +"poderemos sobrepor comandos reais de equipamentos por divisão. "
             +"Ainda não existe qualquer localização ou controlo fictício.",13,MUTED,false),9);
@@ -883,8 +911,19 @@ public final class MainActivity extends Activity {
             view.setBackground(borderFill(currentPalette.tileA,13,currentPalette.tileBorder));
             addWeighted(rooms,view,1,6);
         }
-        add(panel,rooms,13);
+        if(image.isEmpty())add(panel,rooms,13);
+        add(panel,button(image.isEmpty()?"Escolher imagem da planta":
+            "Substituir planta",true,this::selectFloorplan),13);
         add(stage,panel,12);
+    }
+
+    private void selectFloorplan(){
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(picker,PICK_FLOORPLAN);
     }
 
     private void editXiaoZhiPersonality() {

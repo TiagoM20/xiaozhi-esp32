@@ -8,6 +8,8 @@ import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.Manifest;
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -61,8 +63,8 @@ public final class MainActivity extends Activity {
     private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
-    private final String[] navItems = {"Estação", "Dispositivos", "Memórias", "Atualizações"};
-    private String page = "Estação";
+    private final String[] navItems = {"Casa", "Lumi", "Biblioteca"};
+    private String page = "Casa";
     private String activeDevice = "tv";
     private LinearLayout stage;
     private TextView tvFeedback;
@@ -72,14 +74,16 @@ public final class MainActivity extends Activity {
     private static final int CAMERA_REQUEST=405;
     private static final int ADMIN_REQUEST=406;
     private MemoryDb memories;
+    private LumiLibraryDb library;
+    private String libraryTab = "Histórias";
     private static final int PICK_MEMORY_JSON = 9441;
     private final android.os.Handler weatherHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable weatherTick = new Runnable() {
         @Override public void run() {
-            if ("Estação".equals(page)) {
+            if ("Casa".equals(page)) {
                 RebordosaWeather.refreshIfNeeded(MainActivity.this, () -> {
-                    if (!isFinishing() && "Estação".equals(page)) draw();
+                    if (!isFinishing() && "Casa".equals(page)) draw();
                 });
             }
             weatherHandler.postDelayed(this, 5L * 60L * 1000L);
@@ -92,6 +96,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
         memories = new MemoryDb(this);
+        library = new LumiLibraryDb(this);
         seedStarterMemories();
         draw();
     }
@@ -107,6 +112,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if (memories != null) memories.close();
+        if (library != null) library.close();
         super.onDestroy();
     }
 
@@ -282,6 +288,7 @@ public final class MainActivity extends Activity {
 
         // Modo mural: navbar estreita em cima, a largura total para os tiles.
         if (landscape()) topNavigation(root);
+        else portraitHeader(root);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -294,24 +301,40 @@ public final class MainActivity extends Activity {
             dp(landscape()?17:14), dp(20));
         scroll.addView(stage);
         if ("Dispositivos".equals(page)) drawDevices();
-        else if ("Memórias".equals(page)) drawMemories();
+        else if ("Lumi".equals(page)) drawLumi();
+        else if ("Biblioteca".equals(page)) drawLibrary();
+        else if ("Definições".equals(page)) drawSettings();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
         if (!landscape()) bottomNavigation(root);
+    }
+
+    private void portraitHeader(LinearLayout root) {
+        LinearLayout bar=horizontal();
+        bar.setPadding(dp(17),dp(5),dp(14),dp(5));
+        bar.setBackgroundColor(currentPalette.nav);
+        TextView brand=label("⌂  LUMI HUB",18,WHITE,true);
+        brand.setOnClickListener(v->{page="Casa";draw();});
+        addWeighted(bar,brand,1,0);
+        bar.addView(button("⚙  Definições",false,()->{
+            page="Definições";draw();
+        }));
+        root.addView(bar,new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
 
     private void topNavigation(LinearLayout root) {
         LinearLayout bar=horizontal();
         bar.setPadding(dp(18),dp(7),dp(15),dp(7));
         bar.setBackgroundColor(currentPalette.nav);
-        TextView brand=label("⌂   LUMI HOME",18,WHITE,true);
+        TextView brand=label("⌂   LUMI HUB",18,WHITE,true);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        brand.setOnClickListener(v->{page="Estação";draw();});
+        brand.setOnClickListener(v->{page="Casa";draw();});
         addWeighted(bar,brand,1,0);
         for(String name:navItems) {
             final String target=name;
             boolean active=name.equals(page);
-            TextView tab=label("Estação".equals(name)?"Home":name,12,
+            TextView tab=label(name,12,
                 active?WHITE:MUTED,active);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(12),dp(11),dp(12),dp(11));
@@ -323,6 +346,7 @@ public final class MainActivity extends Activity {
             lp.leftMargin=dp(5);
             bar.addView(tab,lp);
         }
+        bar.addView(button("⚙",false,()->{page="Definições";draw();}));
         root.addView(bar, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,dp(58)));
     }
@@ -337,7 +361,7 @@ public final class MainActivity extends Activity {
         TextView lumi = label("LUMI", 12, WHITE, true);
         lumi.setGravity(Gravity.CENTER);
         add(sidebar, lumi, 4);
-        String[] symbols = {"⌂", "▦", "◉", "↧"};
+        String[] symbols = {"⌂", "◉", "▤"};
         for (int i = 0; i < navItems.length; i++) {
             final String name = navItems[i];
             boolean selected = name.equals(page);
@@ -435,7 +459,7 @@ public final class MainActivity extends Activity {
     private void drawStation() {
         // A meteorologia actualiza o cartao sem alterar a configuracao.
         RebordosaWeather.refreshIfNeeded(this, () -> {
-            if (!isFinishing() && "Estação".equals(page)) draw();
+            if (!isFinishing() && "Casa".equals(page)) draw();
         });
         LinearLayout topControls=horizontal();
         TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
@@ -454,7 +478,7 @@ public final class MainActivity extends Activity {
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("LUMI HOME",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
+        hero.addView(label("CASA · REBORDOSA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -516,35 +540,28 @@ public final class MainActivity extends Activity {
 
         LinearLayout heading=horizontal();
         LinearLayout words=vertical();
-        words.addView(label("A MINHA CASA",20,WHITE,true));
-        add(words,label("Todos os equipamentos e acessos num só lugar",12,MUTED,false),3);
+        words.addView(label("EQUIPAMENTOS FAVORITOS",20,WHITE,true));
+        add(words,label("O essencial, sem menus técnicos",12,MUTED,false),3);
         addWeighted(heading,words,1,0);
-        heading.addView(label("11 + espaço extra",11,CYAN,false));
+        heading.addView(button("Ver todos",false,()->{page="Dispositivos";draw();}));
         add(stage,heading,17);
 
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        for(int i=0;i<HomeDevices.ALL.length;i++) {
-            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        String[] favorites={"lumi","tv","vacuum","camera_sala","tablet","camera"};
+        int index=0;
+        for(String key:favorites) {
+            for(HomeDevices.Device device:HomeDevices.ALL) {
+                if(key.equals(device.key)) {
+                    addHomeTile(grid,device,index++,cols);
+                    break;
+                }
+            }
         }
         add(stage,grid,11);
 
-        LinearLayout controls=panel();
-        controls.addView(label("TV DA SALA  ·  CONTROLOS RÁPIDOS",12,CYAN,true));
-        LinearLayout buttons=horizontal();
-        addWeighted(buttons,button("Vol. +",false,
-            ()->tvCommand("ssap://audio/volumeUp",false)),1,0);
-        addWeighted(buttons,button("Vol. −",false,
-            ()->tvCommand("ssap://audio/volumeDown",false)),1,7);
-        addWeighted(buttons,button("YouTube",false,
-            ()->tvCommand("ssap://system.launcher/launch",false)),1,7);
-        addWeighted(buttons,button("Desligar",false,
-            ()->tvCommand("ssap://system/turnOff",false)),1,7);
-        add(controls,buttons,12);
-        tvFeedback=label("TV da Sala · " + lastTv(),12,MUTED,false);
-        add(controls,tvFeedback,7);
-        add(stage,controls,15);
+        add(stage,label("Toca num cartão para gerir o equipamento.",12,MUTED,false),12);
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {
@@ -675,6 +692,168 @@ public final class MainActivity extends Activity {
             }
         }
         draw();
+    }
+
+
+    private void drawLumi() {
+        heading("Lumi","O essencial para a tua assistente.");
+        LinearLayout info=panel();
+        info.addView(label("LUMI DESK  ·  ESP32-S3",20,WHITE,true));
+        add(info,label("Raquel PT-PT · Agente XiaoZhi",14,CYAN,true),7);
+        add(info,label("A personalidade e a voz reais são configuradas no XiaoZhi. "
+            +"O tablet não altera a conta sem uma integração autorizada.",13,MUTED,false),7);
+        add(info,button("Abrir consola XiaoZhi",true,
+            ()->openExternal("https://xiaozhi.me/console/agents")),11);
+        add(stage,info,13);
+
+        LinearLayout contents=panel();
+        contents.addView(label("Histórias e memórias",18,WHITE,true));
+        add(contents,label("Rascunhos guardados localmente no Blackview.",13,MUTED,false),6);
+        add(contents,button("Abrir biblioteca",false,()->{
+            page="Biblioteca";draw();
+        }),10);
+        add(stage,contents,12);
+
+        LinearLayout maintain=panel();
+        maintain.addView(label("Firmware e manutenção",18,WHITE,true));
+        add(maintain,label("Instalações, backups e recuperação num clique "
+            +"pelo gestor Windows opcional. A wake word «Lumi» continua pendente.",13,MUTED,false),7);
+        add(maintain,button("Ferramentas de manutenção",false,this::showDeskMaintenance),9);
+        add(stage,maintain,12);
+
+        LinearLayout activity=panel();
+        activity.addView(label("Diagnóstico da DESK",18,WHITE,true));
+        add(activity,button("Ver histórico local",false,()->
+            startActivity(new Intent(this,DeskLogActivity.class))),10);
+        add(stage,activity,12);
+    }
+
+    private void showDeskMaintenance() {
+        new AlertDialog.Builder(this)
+            .setTitle("Manutenção LUMI DESK")
+            .setMessage("O LUMI CORE mantém utilidade como ferramenta Windows de manutenção: "
+                +"backups integrais, recuperação e instalação de firmware com um clique.\n\n"
+                +"O PC não precisa de ficar ligado para usar a LUMI.\n\n"
+                +"Não instales versões experimentais de ativação "
+                +"enquanto aguardamos o modelo português treinado «Lumi». "
+                +"Mantém a cópia integral de segurança.")
+            .setNegativeButton("Fechar",null)
+            .setPositiveButton("Ver gestores oficiais",(d,w)->openExternal(
+                "https://github.com/TiagoM20/xiaozhi-esp32/releases"))
+            .show();
+    }
+
+
+    private void drawLibrary() {
+        heading("Biblioteca","Histórias, personagens e memórias locais.");
+        LinearLayout tabs=horizontal();
+        for(String tab:new String[]{"Histórias","Personagens","Memórias"}) {
+            addWeighted(tabs,button(tab,tab.equals(libraryTab),()->{
+                libraryTab=tab;draw();
+            }),1,"Histórias".equals(tab)?0:5);
+        }
+        add(stage,tabs,12);
+        if("Memórias".equals(libraryTab)){
+            drawMemories();
+            return;
+        }
+        final String kind="Histórias".equals(libraryTab)?"Historia":"Personagem";
+        LinearLayout card=panel();
+        card.addView(label("Biblioteca privada do tablet",17,WHITE,true));
+        add(card,label("Estas histórias e personagens não são sincronizadas "
+            +"com a conta XiaoZhi. Podes copiar o texto para a consola oficial.",13,MUTED,false),6);
+        add(card,button("+ Criar "+("Historia".equals(kind)?"história":"personagem"),
+            true,()->createLibraryEntry(kind)),10);
+        add(stage,card,14);
+        List<LumiLibraryDb.Entry> contents=library.all(kind);
+        if(contents.isEmpty()){
+            add(stage,label("Ainda não tens "+
+                ("Historia".equals(kind)?"histórias":"personagens")+" guardadas.",
+                14,MUTED,false),13);
+        }
+        for(LumiLibraryDb.Entry entry:contents){
+            LinearLayout tile=panel();
+            tile.addView(label(entry.title,18,WHITE,true));
+            TextView excerpt=label(entry.content.isEmpty()?"Sem texto":entry.content,
+                13,MUTED,false);
+            excerpt.setMaxLines(5);
+            add(tile,excerpt,8);
+            add(tile,button("Copiar texto",false,()->{
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText(entry.title,
+                    entry.title+"\n\n"+entry.content));
+                notice("Copiado","Texto pronto a colar na consola XiaoZhi.");
+            }),9);
+            add(tile,button("Eliminar",false,()->new AlertDialog.Builder(this)
+                .setTitle("Eliminar "+entry.title+"?")
+                .setMessage("A eliminação do rascunho local não pode ser anulada.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Eliminar",(d,w)->{
+                    library.remove(entry.id);draw();
+                }).show()),7);
+            add(stage,tile,12);
+        }
+    }
+
+    private void createLibraryEntry(String kind) {
+        LinearLayout form=vertical();
+        form.setPadding(dp(18),dp(10),dp(18),dp(6));
+        EditText title=new EditText(this);
+        title.setSingleLine(true);title.setHint("Título");
+        form.addView(title);
+        EditText content=new EditText(this);
+        content.setMinLines(4);
+        content.setHint("Texto, contexto ou detalhes da personagem...");
+        add(form,content,8);
+        new AlertDialog.Builder(this)
+            .setTitle("Nova "+("Historia".equals(kind)?"história":"personagem"))
+            .setView(form)
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar",(d,w)->{
+                if(title.getText().toString().trim().isEmpty()){
+                    notice("Título em falta","Indica um título antes de guardar.");
+                    return;
+                }
+                library.save(kind,title.getText().toString(),
+                    content.getText().toString());
+                draw();
+            }).show();
+    }
+
+    private void drawSettings() {
+        heading("Definições","Ligações, atualizações e manutenção.");
+        LinearLayout updates=panel();
+        updates.addView(label("Atualizações do HUB",18,WHITE,true));
+        add(updates,label("Versões assinadas, testes e histórico.",13,MUTED,false),6);
+        add(updates,button("Consultar atualizações",true,()->{
+            page="Atualizações";updatesTab="Versões";draw();
+        }),10);
+        add(stage,updates,12);
+        LinearLayout look=panel();
+        look.addView(label("Aparência",18,WHITE,true));
+        add(look,button("Escolher tema",false,()->{
+            page="Atualizações";updatesTab="Temas";draw();
+        }),10);
+        add(stage,look,12);
+        LinearLayout home=panel();
+        home.addView(label("Home Assistant",18,WHITE,true));
+        add(home,label("Integração em preparação. "
+            +"Apenas os dispositivos já ligados têm controlo real.",13,MUTED,false),7);
+        add(home,button("Documentação oficial",false,()->openExternal(
+            "https://www.home-assistant.io/integrations/")),9);
+        add(stage,home,12);
+        LinearLayout advanced=panel();
+        advanced.addView(label("Ferramentas e dispositivos",18,WHITE,true));
+        add(advanced,button("Todos os dispositivos",false,()->{
+            page="Dispositivos";draw();
+        }),8);
+        add(advanced,button("Manutenção da DESK (Windows)",false,this::showDeskMaintenance),7);
+        add(advanced,button("Ligação CORE Windows (legado)",false,()->
+            startActivity(new Intent(this,LumiCorePairActivity.class))),7);
+        add(advanced,button("Estado do tablet",false,()->{
+            activeDevice="tablet";page="Dispositivos";draw();
+        }),7);
+        add(stage,advanced,12);
     }
 
     private void drawDevices() {
@@ -1038,7 +1217,8 @@ public final class MainActivity extends Activity {
     }
 
     private void drawMemories() {
-        heading("Memórias","Informações que decides guardar no Tab 15.");
+        if(!"Biblioteca".equals(page))
+            heading("Memórias","Informações que decides guardar no Tab 15.");
         LinearLayout c=detail();
         c.addView(label(memories.count()+" memórias guardadas",20,WHITE,true));
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "
@@ -1091,7 +1271,7 @@ public final class MainActivity extends Activity {
     }
 
     private void drawUpdates() {
-        heading("Atualizações","Versões, aparência e definições visuais da tua central.");
+        heading("Atualizações","Versões do HUB publicadas no GitHub, incluindo V12.");
         LinearLayout tabs=horizontal();
         addWeighted(tabs,button("Versões",updatesTab.equals("Versões"),()->{
             updatesTab="Versões";draw();
@@ -1109,6 +1289,8 @@ public final class MainActivity extends Activity {
         add(c,label("Versões estáveis e de testes assinadas, claramente identificadas. " +
             "O firmware da LUMI DESK não é instalado por esta opção.",13,MUTED,false),9);
         add(c,button("Procurar atualizações",true,this::loadReleases),14);
+        add(c,button("Abrir versões no GitHub",false,()->openExternal(
+            "https://github.com/TiagoM20/xiaozhi-esp32/releases")),8);
         add(stage,c,16);
         LinearLayout list=vertical();
         list.setId(17331);
@@ -1163,7 +1345,7 @@ public final class MainActivity extends Activity {
         }
         add(stage,grid,13);
         add(stage,button("Voltar à Home",true,()->{
-            page="Estação";draw();
+            page="Casa";draw();
         }),12);
     }
 
@@ -1207,7 +1389,7 @@ public final class MainActivity extends Activity {
             String problem=null;
             try{
                 HttpURLConnection con=(HttpURLConnection)new URL(
-                    "https://api.github.com/repos/TiagoM20/xiaozhi-esp32/releases?per_page=40"
+                    "https://api.github.com/repos/TiagoM20/xiaozhi-esp32/releases?per_page=100"
                 ).openConnection();
                 con.setRequestProperty("Accept","application/vnd.github+json");
                 con.setRequestProperty("User-Agent","LUMI-Hub-Android");
@@ -1222,13 +1404,32 @@ public final class MainActivity extends Activity {
                         String line;
                         while((line=rd.readLine())!=null) {
                             b.append(line);
-                            if(b.length()>512000)
+                            if(b.length()>2000000)
                                 throw new Exception("Resposta excessivamente grande");
                         }
                     }
-                    releases=new JSONArray(b.toString());
+                    JSONArray all=new JSONArray(b.toString());
+                    JSONArray selected=new JSONArray();
+                    for(int i=0;i<all.length();i++) {
+                        JSONObject item=all.optJSONObject(i);
+                        if(item==null||item.optBoolean("draft"))continue;
+                        if(!item.optString("tag_name","").startsWith("lumi-hub-v"))continue;
+                        if(releaseApkUrl(item).isEmpty())continue;
+                        selected.put(item);
+                    }
+                    if(selected.length()==0)throw new Exception("Sem versões HUB na resposta");
+                    releases=selected;
+                    getSharedPreferences("hub",MODE_PRIVATE).edit()
+                        .putString("hub_versions_cache",selected.toString()).apply();
                 }finally{con.disconnect();}
-            }catch(Exception ex){problem=ex.getMessage();}
+            }catch(Exception ex){
+                problem="Falha na consulta GitHub ("+ex.getClass().getSimpleName()+").";
+                try {
+                    String saved=getSharedPreferences("hub",MODE_PRIVATE)
+                        .getString("hub_versions_cache","");
+                    if(!saved.isEmpty())releases=new JSONArray(saved);
+                }catch(Exception ignored){}
+            }
             final JSONArray result=releases;
             final String error=problem;
             runOnUiThread(()->{
@@ -1237,10 +1438,14 @@ public final class MainActivity extends Activity {
                 if(area==null)return;
                 area.removeAllViews();
                 if(error!=null){
-                    add(area,label("Não foi possível consultar as atualizações: "
-                        +error,13,GOLD,false),6);
-                    add(area,button("Tentar novamente",false,this::loadReleases),10);
-                    return;
+                    add(area,label(error+(result==null
+                        ?" Abre as versões oficiais no GitHub."
+                        :" A apresentar a última lista guardada no tablet."),
+                        13,GOLD,false),6);
+                    add(area,button("Tentar novamente",false,this::loadReleases),9);
+                    add(area,button("Ver versões oficiais no GitHub",false,()->
+                        openExternal("https://github.com/TiagoM20/xiaozhi-esp32/releases")),9);
+                    if(result==null)return;
                 }
                 if(result==null) return;
                 java.util.ArrayList<JSONObject> versions=new java.util.ArrayList<>();
@@ -1286,7 +1491,9 @@ public final class MainActivity extends Activity {
                     }
                     add(area,summary,8);
                 }
+                int shown=0;
                 for(JSONObject rel:versions) {
+                    if(shown++>=10)break;
                     String tag=rel.optString("tag_name","");
                     String link=releaseApkUrl(rel);
                     LinearLayout tile=panel();
@@ -1303,8 +1510,13 @@ public final class MainActivity extends Activity {
                             ()->downloadApk(link,tag)),11);
                     add(area,tile,10);
                 }
-                if(versions.isEmpty())
-                    add(area,label("Sem versões Android publicadas.",14,MUTED,false),10);
+                if(versions.isEmpty()){
+                    add(area,label("A lista ainda não está disponível. "
+                        +"As versões V12 encontram-se na página oficial do GitHub.",
+                        14,MUTED,false),10);
+                    add(area,button("Abrir versão HUB 12.8",false,()->openExternal(
+                        "https://github.com/TiagoM20/xiaozhi-esp32/releases/tag/lumi-hub-v0.12.8")),9);
+                }
             });
         },"LumiHubReleases").start();
     }

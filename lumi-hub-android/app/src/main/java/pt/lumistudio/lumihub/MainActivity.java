@@ -528,14 +528,7 @@ public final class MainActivity extends Activity {
             12,savedIp().isEmpty()?GOLD:CYAN,false),8);
         add(noticePanel,label("●   " + android.os.Build.MODEL + "    ·    " + battery() + "% de bateria",
             12,GREEN,false),8);
-        LinearLayout shortcuts=horizontal();
-        addWeighted(shortcuts,button("Dispositivos",false,()->{
-            page="Dispositivos";activeDevice="tv";draw();
-        }),1,0);
-        addWeighted(shortcuts,button("Spotify",false,()->{
-            page="Dispositivos";activeDevice="spotify";draw();
-        }),1,7);
-        add(noticePanel,shortcuts,10);
+        add(noticePanel,label("Equipamentos: abre os cartões para controlar.",12,MUTED,false),10);
         addOverview(top,noticePanel,11);
         add(stage,top,12);
 
@@ -562,7 +555,14 @@ public final class MainActivity extends Activity {
         }
         add(stage,grid,11);
 
-        add(stage,label("Toca num cartão para gerir o equipamento.",12,MUTED,false),12);
+        LinearLayout quick=horizontal();
+        addWeighted(quick,button("◉  Pessoas da casa",true,()->{
+            page="Pessoas";draw();
+        }),1,0);
+        addWeighted(quick,button("▤  Planta da casa",false,()->{
+            page="Planta";draw();
+        }),1,8);
+        add(stage,quick,16);
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {
@@ -703,14 +703,21 @@ public final class MainActivity extends Activity {
         add(info,label("Raquel PT-PT · Agente XiaoZhi",14,CYAN,true),7);
         add(info,label("A personalidade e a voz reais são configuradas no XiaoZhi. "
             +"O tablet não altera a conta sem uma integração autorizada.",13,MUTED,false),7);
-        add(info,button("Abrir consola XiaoZhi",true,
+        add(info,button("Configurar voz e agente no XiaoZhi",true,
             ()->openExternal("https://xiaozhi.me/console/agents")),11);
         add(stage,info,13);
 
+        LinearLayout personality=panel();
+        personality.addView(label("Personalidade da LUMI",18,WHITE,true));
+        add(personality,label("Prepara as instruções aqui e aplica-as na consola oficial.",13,MUTED,false),6);
+        add(personality,button("Editar rascunho de personalidade",false,
+            this::editXiaoZhiPersonality),9);
+        add(stage,personality,12);
+
         LinearLayout contents=panel();
         contents.addView(label("Histórias e memórias",18,WHITE,true));
-        add(contents,label("Rascunhos e memórias locais para a LUMI.",13,MUTED,false),6);
-        add(contents,button("Abrir biblioteca",false,()->{
+        add(contents,label("Histórias, personagens e memórias locais destinadas à DESK.",13,MUTED,false),6);
+        add(contents,button("Gerir conteúdos da LUMI",false,()->{
             page="Biblioteca";draw();
         }),10);
         add(stage,contents,12);
@@ -741,7 +748,7 @@ public final class MainActivity extends Activity {
 
 
     private void drawLibrary() {
-        heading("Biblioteca","Histórias, personagens e memórias locais.");
+        heading("Conteúdos da LUMI","Histórias, personagens e memórias locais.");
         LinearLayout tabs=horizontal();
         for(String tab:new String[]{"Histórias","Personagens","Memórias"}) {
             addWeighted(tabs,button(tab,tab.equals(libraryTab),()->{
@@ -749,6 +756,9 @@ public final class MainActivity extends Activity {
             }),1,"Histórias".equals(tab)?0:5);
         }
         add(stage,tabs,12);
+        add(stage,button("‹  Voltar à LUMI DESK",false,()->{
+            page="Lumi";draw();
+        }),8);
         if("Memórias".equals(libraryTab)){
             drawMemories();
             return;
@@ -975,9 +985,9 @@ public final class MainActivity extends Activity {
     private void cameraRoomDetails() {
         LinearLayout card=detail();
         card.addView(label("Câmara da Sala",23,WHITE,true));
-        add(card,label("TAB 15 · CÂMARA LOCAL",13,CYAN,true),7);
+        add(card,label("CÂMARA DESTE DISPOSITIVO",13,CYAN,true),7);
         add(card,label("A imagem aparece apenas quando abres a pré-visualização. Não existe gravação, transmissão em rede nem acesso remoto à câmara.",13,MUTED,false),9);
-        add(card,button("Ver câmara do tablet",true,this::openRoomCamera),13);
+        add(card,button("Escolher câmara frontal ou traseira",true,this::openRoomCamera),13);
         add(card,label("O Android poderá pedir autorização para utilizar a câmara. Esta autorização é diferente da Câmara da Varanda.",12,MUTED,false),10);
         add(stage,card,16);
     }

@@ -573,13 +573,30 @@ public final class MainActivity extends Activity {
         add(stage,grid,11);
 
         LinearLayout quick=horizontal();
-        addWeighted(quick,button("◉  Pessoas da casa",true,()->{
-            page="Pessoas";draw();
-        }),1,0);
-        addWeighted(quick,button("▤  Planta da casa",false,()->{
-            page="Planta";draw();
-        }),1,8);
-        add(stage,quick,16);
+        addWeighted(quick,visualShortcut("Pessoas da casa","Telemóveis e família",
+            "people",7,()->{page="Pessoas";draw();}),1,0);
+        addWeighted(quick,visualShortcut("Planta da casa","Vista por divisão",
+            "floorplan",8,()->{page="Planta";draw();}),1,10);
+        add(stage,quick,18);
+    }
+
+    private LinearLayout visualShortcut(String name,String subtitle,String icon,
+                                      int gradientIndex,Runnable action) {
+        LinearLayout result=vertical();
+        result.setPadding(dp(17),dp(16),dp(14),dp(16));
+        GradientDrawable backdrop=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            HubThemes.tileGradient(themeId,gradientIndex));
+        backdrop.setCornerRadius(dp(19));
+        backdrop.setStroke(dp(1),currentPalette.tileBorder);
+        result.setBackground(backdrop);
+        result.addView(new HomeIconView(this,icon,currentPalette.tileIcon),
+            new LinearLayout.LayoutParams(dp(42),dp(42)));
+        add(result,label(name,17,currentPalette.tileText,true),8);
+        add(result,label(subtitle,12,currentPalette.tileText,false),4);
+        result.setMinimumHeight(dp(142));
+        result.setOnClickListener(v->action.run());
+        return result;
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {
@@ -737,6 +754,8 @@ public final class MainActivity extends Activity {
         add(contents,button("Gerir conteúdos da LUMI",false,()->{
             page="Biblioteca";draw();
         }),10);
+        add(contents,button("Preparar contexto para XiaoZhi",false,
+            this::copyLumiContextToXiaoZhi),8);
         add(stage,contents,12);
 
         LinearLayout maintain=panel();
@@ -883,6 +902,56 @@ public final class MainActivity extends Activity {
             }),7);
             add(stage,card,10);
         }
+        SharedPreferences preferences=getSharedPreferences("hub",MODE_PRIVATE);
+        JSONArray others;
+        try{others=new JSONArray(preferences.getString("extra_house_people","[]"));}
+        catch(Exception error){others=new JSONArray();}
+        for(int i=0;i<others.length();i++){
+            final int index=i;
+            String name=others.optString(i,"");
+            if(name.isEmpty())continue;
+            LinearLayout card=panel();
+            card.addView(label("●  "+name,20,WHITE,true));
+            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
+            add(card,button("Remover pessoa",false,()->new AlertDialog.Builder(this)
+                .setTitle("Remover "+name+" do HUB?")
+                .setMessage("Apaga apenas o registo local. Não altera a conta Google.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Remover",(d,w)->{
+                    try{
+                        JSONArray people=new JSONArray(preferences.getString(
+                            "extra_house_people","[]"));
+                        JSONArray remaining=new JSONArray();
+                        for(int j=0;j<people.length();j++)
+                            if(j!=index)remaining.put(people.optString(j));
+                        preferences.edit().putString("extra_house_people",
+                            remaining.toString()).apply();
+                        draw();
+                    }catch(Exception ignored){}
+                }).show()),7);
+            add(stage,card,11);
+        }
+        add(stage,button("+ Adicionar pessoa",true,()->{
+            EditText name=new EditText(this);
+            name.setSingleLine(true);name.setHint("Nome");
+            new AlertDialog.Builder(this).setTitle("Adicionar pessoa à casa")
+                .setMessage("A localização é aberta no Google Find Hub com autorização.")
+                .setView(name).setNegativeButton("Cancelar",null)
+                .setPositiveButton("Adicionar",(d,w)->{
+                    String value=name.getText().toString().trim();
+                    if(value.isEmpty() || value.length()>60)return;
+                    try{
+                        JSONArray people=new JSONArray(preferences.getString(
+                            "extra_house_people","[]"));
+                        if(people.length()>=12)return;
+                        people.put(value);
+                        preferences.edit().putString("extra_house_people",
+                            people.toString()).apply();
+                        draw();
+                    }catch(Exception ignored){}
+                }).show();
+        }),13);
     }
 
     private void drawFloorplan() {
@@ -924,6 +993,39 @@ public final class MainActivity extends Activity {
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(picker,PICK_FLOORPLAN);
+    }
+
+
+    private void copyLumiContextToXiaoZhi(){
+        StringBuilder context=new StringBuilder();
+        context.append("Contexto opcional LUMI DESK (português de Portugal).\n");
+        context.append("Estes dados foram guardados localmente pelo utilizador.\n");
+        for(MemoryDb.Item item:memories.all()){
+            context.append("\nMemória: ").append(item.title).append("\n")
+                .append(item.detail).append("\n");
+            if(context.length()>9000)break;
+        }
+        for(String kind:new String[]{"Historia","Personagem"}){
+            for(LumiLibraryDb.Entry entry:library.all(kind)){
+                context.append("\n").append(kind).append(": ")
+                    .append(entry.title).append("\n")
+                    .append(entry.content).append("\n");
+                if(context.length()>9000)break;
+            }
+        }
+        if(context.length()>11000)context.setLength(11000);
+        final String text=context.toString();
+        new AlertDialog.Builder(this)
+            .setTitle("Enviar conteúdos para o XiaoZhi?")
+            .setMessage("Será copiado texto para a área de transferência do Android "
+                +"e aberta a consola XiaoZhi. Nada é enviado automaticamente. "
+                +"Revê os dados antes de os colares no agente.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Copiar e abrir",(d,w)->{
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText("Contexto LUMI",text));
+                openExternal("https://xiaozhi.me/console/agents");
+            }).show();
     }
 
     private void editXiaoZhiPersonality() {

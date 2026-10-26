@@ -900,6 +900,56 @@ public final class MainActivity extends Activity {
             }),7);
             add(stage,card,10);
         }
+        SharedPreferences preferences=getSharedPreferences("hub",MODE_PRIVATE);
+        JSONArray others;
+        try{others=new JSONArray(preferences.getString("extra_house_people","[]"));}
+        catch(Exception error){others=new JSONArray();}
+        for(int i=0;i<others.length();i++){
+            final int index=i;
+            String name=others.optString(i,"");
+            if(name.isEmpty())continue;
+            LinearLayout card=panel();
+            card.addView(label("●  "+name,20,WHITE,true));
+            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
+            add(card,button("Remover pessoa",false,()->new AlertDialog.Builder(this)
+                .setTitle("Remover "+name+" do HUB?")
+                .setMessage("Apaga apenas o registo local. Não altera a conta Google.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Remover",(d,w)->{
+                    try{
+                        JSONArray people=new JSONArray(preferences.getString(
+                            "extra_house_people","[]"));
+                        JSONArray remaining=new JSONArray();
+                        for(int j=0;j<people.length();j++)
+                            if(j!=index)remaining.put(people.optString(j));
+                        preferences.edit().putString("extra_house_people",
+                            remaining.toString()).apply();
+                        draw();
+                    }catch(Exception ignored){}
+                }).show()),7);
+            add(stage,card,11);
+        }
+        add(stage,button("+ Adicionar pessoa",true,()->{
+            EditText name=new EditText(this);
+            name.setSingleLine(true);name.setHint("Nome");
+            new AlertDialog.Builder(this).setTitle("Adicionar pessoa à casa")
+                .setMessage("A localização é aberta no Google Find Hub com autorização.")
+                .setView(name).setNegativeButton("Cancelar",null)
+                .setPositiveButton("Adicionar",(d,w)->{
+                    String value=name.getText().toString().trim();
+                    if(value.isEmpty() || value.length()>60)return;
+                    try{
+                        JSONArray people=new JSONArray(preferences.getString(
+                            "extra_house_people","[]"));
+                        if(people.length()>=12)return;
+                        people.put(value);
+                        preferences.edit().putString("extra_house_people",
+                            people.toString()).apply();
+                        draw();
+                    }catch(Exception ignored){}
+                }).show();
+        }),13);
     }
 
     private void drawFloorplan() {

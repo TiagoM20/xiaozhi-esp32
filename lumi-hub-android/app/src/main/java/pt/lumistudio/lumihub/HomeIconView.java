@@ -76,6 +76,20 @@ public final class HomeIconView extends View {
                 box(canvas,22,12,78,88,6);
                 line(canvas,43,80,57,80);
                 break;
+            case "people":
+                oval(canvas,16,17,42,44);
+                oval(canvas,58,17,84,44);
+                line(canvas,13,55,13,77);line(canvas,13,55,44,55);
+                line(canvas,87,55,87,77);line(canvas,87,55,56,55);
+                oval(canvas,35,37,65,67);
+                line(canvas,30,78,70,78);
+                break;
+            case "floorplan":
+                box(canvas,13,13,87,87,6);
+                line(canvas,47,13,47,56);line(canvas,47,56,87,56);
+                line(canvas,13,62,38,62);line(canvas,38,62,38,87);
+                line(canvas,60,72,73,72);line(canvas,66,65,66,79);
+                break;
             case "phone":
                 box(canvas,31,9,69,91,7);
                 line(canvas,43,20,57,20);

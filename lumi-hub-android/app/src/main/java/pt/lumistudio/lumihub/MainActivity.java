@@ -743,6 +743,83 @@ public final class MainActivity extends Activity {
             .show();
     }
 
+
+    private void drawLibrary() {
+        heading("Biblioteca","Histórias, personagens e memórias locais.");
+        LinearLayout tabs=horizontal();
+        for(String tab:new String[]{"Histórias","Personagens","Memórias"}) {
+            addWeighted(tabs,button(tab,tab.equals(libraryTab),()->{
+                libraryTab=tab;draw();
+            }),1,"Histórias".equals(tab)?0:5);
+        }
+        add(stage,tabs,12);
+        if("Memórias".equals(libraryTab)){
+            drawMemories();
+            return;
+        }
+        final String kind="Histórias".equals(libraryTab)?"Historia":"Personagem";
+        LinearLayout card=panel();
+        card.addView(label("Biblioteca privada do tablet",17,WHITE,true));
+        add(card,label("Estas histórias e personagens não são sincronizadas "
+            +"com a conta XiaoZhi. Podes copiar o texto para a consola oficial.",13,MUTED,false),6);
+        add(card,button("+ Criar "+("Historia".equals(kind)?"história":"personagem"),
+            true,()->createLibraryEntry(kind)),10);
+        add(stage,card,14);
+        List<LumiLibraryDb.Entry> contents=library.all(kind);
+        if(contents.isEmpty()){
+            add(stage,label("Ainda não tens "+
+                ("Historia".equals(kind)?"histórias":"personagens")+" guardadas.",
+                14,MUTED,false),13);
+        }
+        for(LumiLibraryDb.Entry entry:contents){
+            LinearLayout tile=panel();
+            tile.addView(label(entry.title,18,WHITE,true));
+            TextView excerpt=label(entry.content.isEmpty()?"Sem texto":entry.content,
+                13,MUTED,false);
+            excerpt.setMaxLines(5);
+            add(tile,excerpt,8);
+            add(tile,button("Copiar texto",false,()->{
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                cb.setPrimaryClip(ClipData.newPlainText(entry.title,
+                    entry.title+"\n\n"+entry.content));
+                notice("Copiado","Texto pronto a colar na consola XiaoZhi.");
+            }),9);
+            add(tile,button("Eliminar",false,()->new AlertDialog.Builder(this)
+                .setTitle("Eliminar "+entry.title+"?")
+                .setMessage("A eliminação do rascunho local não pode ser anulada.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Eliminar",(d,w)->{
+                    library.remove(entry.id);draw();
+                }).show()),7);
+            add(stage,tile,12);
+        }
+    }
+
+    private void createLibraryEntry(String kind) {
+        LinearLayout form=vertical();
+        form.setPadding(dp(18),dp(10),dp(18),dp(6));
+        EditText title=new EditText(this);
+        title.setSingleLine(true);title.setHint("Título");
+        form.addView(title);
+        EditText content=new EditText(this);
+        content.setMinLines(4);
+        content.setHint("Texto, contexto ou detalhes da personagem...");
+        add(form,content,8);
+        new AlertDialog.Builder(this)
+            .setTitle("Nova "+("Historia".equals(kind)?"história":"personagem"))
+            .setView(form)
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar",(d,w)->{
+                if(title.getText().toString().trim().isEmpty()){
+                    notice("Título em falta","Indica um título antes de guardar.");
+                    return;
+                }
+                library.save(kind,title.getText().toString(),
+                    content.getText().toString());
+                draw();
+            }).show();
+    }
+
     private void drawSettings() {
         heading("Definições","Ligações, atualizações e manutenção.");
         LinearLayout updates=panel();
@@ -1140,7 +1217,8 @@ public final class MainActivity extends Activity {
     }
 
     private void drawMemories() {
-        heading("Memórias","Informações que decides guardar no Tab 15.");
+        if(!"Biblioteca".equals(page))
+            heading("Memórias","Informações que decides guardar no Tab 15.");
         LinearLayout c=detail();
         c.addView(label(memories.count()+" memórias guardadas",20,WHITE,true));
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "

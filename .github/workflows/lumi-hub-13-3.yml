@@ -8,6 +8,11 @@ on:
       - '.github/workflows/lumi-hub-13-3.yml'
   workflow_dispatch:
 
+# Apenas uma compilação/publicação por branch de cada vez.
+concurrency:
+  group: lumi-hub-13-3-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -101,8 +106,22 @@ jobs:
           path: output-ptpt/LUMI-HUB-13.3-RAQUEL-PTPT-ASSINADO.apk
           retention-days: 30
 
-      - name: Publicar V13.3 em Atualizacoes > Versoes
+      - name: Confirmar que o commit ainda é o mais recente
         if: env.LUMI_HAS_SIGNING == 'true'
+        id: latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="$(git ls-remote origin refs/heads/feature/lumi-hub-13-3-homeassistant-20261026 | cut -f1)"
+          if [ "$CURRENT" = "$GITHUB_SHA" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Build desatualizada: release nao sera substituida."
+          fi
+
+      - name: Publicar V13.3 em Atualizacoes > Versoes
+        if: env.LUMI_HAS_SIGNING == 'true' && steps.latest.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: lumi-hub-v0.13.3

@@ -126,7 +126,7 @@ jobs:
         with:
           tag_name: lumi-hub-v0.13.3
           target_commitish: feature/lumi-hub-13-3-homeassistant-20261026
-          name: LUMI HUB V13.3 - Casa Lumi Biblioteca e lista de versoes
+          name: LUMI HUB V13.3 - Home Assistant e controlo da casa
           prerelease: true
           make_latest: false
           body: |
@@ -138,6 +138,10 @@ jobs:
             Acoes usam POST /api/services e leitura GET /api/states; sem log de tokens.
             Suporte de HTTP so para enderecos privados da rede local e HTTPS remoto.
             Acesso HA em Casa e Definicoes, com atalhos em Aspirador e outros equipamentos.
+            Estados de entidades reais nos paineis Casa e Dispositivos.
+            Associacao manual a Sala, Cozinha, Quartos ou Outra divisao.
+            Planta: acesso por divisao aos equipamentos associados e seus controlos.
+            Sem marcadores sobrepostos à imagem da planta nesta versao.
             TV LG direta continua operacional e nao e substituida.
             Area de voz inclui orientacao da integracao comunitaria xiaozhi-mcp-ha
             sobre HA MCP Server, sem alterar o firmware DESK e sem dependencia do PC.

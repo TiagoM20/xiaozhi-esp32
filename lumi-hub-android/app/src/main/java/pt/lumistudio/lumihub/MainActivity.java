@@ -573,13 +573,30 @@ public final class MainActivity extends Activity {
         add(stage,grid,11);
 
         LinearLayout quick=horizontal();
-        addWeighted(quick,button("◉  Pessoas da casa",true,()->{
-            page="Pessoas";draw();
-        }),1,0);
-        addWeighted(quick,button("▤  Planta da casa",false,()->{
-            page="Planta";draw();
-        }),1,8);
-        add(stage,quick,16);
+        addWeighted(quick,visualShortcut("Pessoas da casa","Telemóveis e família",
+            "people",7,()->{page="Pessoas";draw();}),1,0);
+        addWeighted(quick,visualShortcut("Planta da casa","Vista por divisão",
+            "floorplan",8,()->{page="Planta";draw();}),1,10);
+        add(stage,quick,18);
+    }
+
+    private LinearLayout visualShortcut(String name,String subtitle,String icon,
+                                      int gradientIndex,Runnable action) {
+        LinearLayout result=vertical();
+        result.setPadding(dp(17),dp(16),dp(14),dp(16));
+        GradientDrawable backdrop=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            HubThemes.tileGradient(themeId,gradientIndex));
+        backdrop.setCornerRadius(dp(19));
+        backdrop.setStroke(dp(1),currentPalette.tileBorder);
+        result.setBackground(backdrop);
+        result.addView(new HomeIconView(this,icon,currentPalette.tileIcon),
+            new LinearLayout.LayoutParams(dp(42),dp(42)));
+        add(result,label(name,17,currentPalette.tileText,true),8);
+        add(result,label(subtitle,12,currentPalette.tileText,false),4);
+        result.setMinimumHeight(dp(142));
+        result.setOnClickListener(v->action.run());
+        return result;
     }
 
     private void addOverview(LinearLayout row, View tile, int margin) {

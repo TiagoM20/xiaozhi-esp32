@@ -578,6 +578,19 @@ public final class MainActivity extends Activity {
         addWeighted(quick,visualShortcut("Planta da casa","Vista por divisão",
             "floorplan",8,()->{page="Planta";draw();}),1,10);
         add(stage,quick,18);
+        LinearLayout ha=panel();
+        ha.addView(label("HOME ASSISTANT",18,WHITE,true));
+        boolean configured=HomeAssistantClient.isConfigured(this);
+        add(ha,label(configured?"Servidor configurado · estados disponíveis no painel":
+            "Liga o servidor Home Assistant para controlar dispositivos reais.",
+            13,MUTED,false),6);
+        add(ha,button(configured?"Abrir controlo da casa":"Configurar Home Assistant",
+            true,this::openHomeAssistant),10);
+        add(stage,ha,15);
+    }
+
+    private void openHomeAssistant(){
+        startActivity(new Intent(this,HomeAssistantActivity.class));
     }
 
     private LinearLayout visualShortcut(String name,String subtitle,String icon,
@@ -611,13 +624,16 @@ public final class MainActivity extends Activity {
             case "tablet": return "Bateria " + battery() + "%";
             case "camera": return "Vídeo por integrar";
             case "camera_sala": return "Imagem local · ao tocar";
-            case "vacuum": return "Por configurar";
+            case "vacuum": return HomeAssistantClient.isConfigured(this)?
+                "Consultar no HA":"Por configurar";
             case "phone_deolinda":
             case "phone_tiago":
             case "phone_leonardo": return "Localizar via Google";
             case "spotify": return "Abrir música";
-            case "ac": return "Por configurar";
-            case "plug": return "Por instalar";
+            case "ac": return HomeAssistantClient.isConfigured(this)?
+                "Consultar no HA":"Por configurar";
+            case "plug": return HomeAssistantClient.isConfigured(this)?
+                "Consultar no HA":"Por instalar";
             case "more": return "Futuros dispositivos";
             default: return d.subtitle;
         }
@@ -1070,10 +1086,11 @@ public final class MainActivity extends Activity {
         add(stage,look,12);
         LinearLayout home=panel();
         home.addView(label("Home Assistant",18,WHITE,true));
-        add(home,label("Integração em preparação. "
-            +"Apenas os dispositivos já ligados têm controlo real.",13,MUTED,false),7);
-        add(home,button("Documentação oficial",false,()->openExternal(
-            "https://www.home-assistant.io/integrations/")),9);
+        add(home,label(HomeAssistantClient.isConfigured(this)?
+            "Servidor configurado. Vê estados e controla equipamentos reais.":
+            "Associa um servidor para obter estados e comandar dispositivos.",
+            13,MUTED,false),7);
+        add(home,button("Gerir Home Assistant",true,this::openHomeAssistant),9);
         add(stage,home,12);
         LinearLayout advanced=panel();
         advanced.addView(label("Ferramentas e dispositivos",18,WHITE,true));
@@ -1113,12 +1130,21 @@ public final class MainActivity extends Activity {
         else if("phone_tiago".equals(activeDevice)) phoneDetails("Tiago");
         else if("phone_leonardo".equals(activeDevice)) phoneDetails("Leonardo");
         else if("spotify".equals(activeDevice)) spotifyDetails();
-        else if("vacuum".equals(activeDevice)) placeholderDetails("Aspirador Alfawise",
-            "Equipamento reservado na LUMI. O controlo fica por configurar quando confirmarmos o modelo exato e o protocolo suportado.");
-        else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
-            "A integração depende da marca e do protocolo Wi-Fi ou infravermelhos. Mantemos o equipamento no painel.");
-        else if("plug".equals(activeDevice)) placeholderDetails("Tomada inteligente",
-            "Ainda não foi instalada. A gestão automática depende de uma tomada integrada.");
+        else if("vacuum".equals(activeDevice)){
+            if(HomeAssistantClient.isConfigured(this))homeAssistantDeviceDetails("Aspirador");
+            else placeholderDetails("Aspirador",
+                "Liga o Home Assistant e configura a integração real do aspirador para o controlar.");
+        }
+        else if("ac".equals(activeDevice)){
+            if(HomeAssistantClient.isConfigured(this))homeAssistantDeviceDetails("Ar condicionado");
+            else placeholderDetails("Ar condicionado",
+                "Liga o Home Assistant e a integração do equipamento para obter controlos.");
+        }
+        else if("plug".equals(activeDevice)){
+            if(HomeAssistantClient.isConfigured(this))homeAssistantDeviceDetails("Tomadas");
+            else placeholderDetails("Tomada inteligente",
+                "Liga o Home Assistant para descobrir tomadas compatíveis.");
+        }
         else placeholderDetails("Espaço para novos dispositivos",
             "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
     }
@@ -1241,6 +1267,18 @@ public final class MainActivity extends Activity {
         }catch(Exception error) {
             notice("Abrir serviço","Não foi possível abrir a aplicação ou página: "+error.getMessage());
         }
+    }
+
+    private void homeAssistantDeviceDetails(String title){
+        LinearLayout card=detail();
+        card.addView(label(title,22,WHITE,true));
+        add(card,label("HOME ASSISTANT · CONFIGURADO",13,CYAN,true),7);
+        add(card,label("Seleciona o equipamento real na lista de entidades do "
+            +"Home Assistant. Não são enviados comandos até escolheres a entidade certa.",
+            13,MUTED,false),8);
+        add(card,button("Abrir equipamentos Home Assistant",true,
+            this::openHomeAssistant),11);
+        add(stage,card,12);
     }
 
     private void placeholderDetails(String title,String explanation) {

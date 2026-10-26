@@ -23,15 +23,10 @@ public final class HomeDevices {
     }
 
     public static final Device[] ALL = {
-        new Device("lumi", "LUMI DESK", "Assistente de voz", "Casa", "lumi"),
         new Device("tv", "TV da Sala", "LG webOS", "Casa", "tv"),
-        new Device("camera_sala", "Câmara Sala", "Câmara do Tab 15", "Casa", "camera"),
+        new Device("camera_sala", "Câmara local", "Frontal ou traseira", "Casa", "camera"),
         new Device("camera", "Câmara Varanda", "IPC-TA22C-G", "Casa", "camera"),
         new Device("vacuum", "Aspirador", "Alfawise · a configurar", "Casa", "vacuum"),
-        new Device("tablet", "Tab 15", "Central doméstica", "Casa", "tablet"),
-        new Device("phone_deolinda", "Telemóvel Deolinda", "Google Find Hub", "Telemóveis", "phone"),
-        new Device("phone_tiago", "Telemóvel Tiago", "Google Find Hub", "Telemóveis", "phone"),
-        new Device("phone_leonardo", "Telemóvel Leonardo", "Google Find Hub", "Telemóveis", "phone"),
         new Device("spotify", "Spotify", "Música", "Serviços", "music"),
         new Device("ac", "Ar condicionado", "Sala · a configurar", "Casa", "ac"),
         new Device("plug", "Tomada Wi-Fi", "Por adicionar", "Casa", "plug"),

@@ -1,0 +1,127 @@
+name: LUMI CORE Manutenção DESK Windows 0.5.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-core-desk-maintenance-050-20261026]
+    paths:
+      - 'tools/lumi-desk-windows/**'
+      - '.github/workflows/lumi-core-maintenance-windows-050.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: lumi-core-desk-maintenance-windows
+  cancel-in-progress: true
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Obter codigo LUMI
+        uses: actions/checkout@v4
+
+      - name: Python para compilar (nao e exigido ao utilizador)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar ferramentas na maquina GitHub
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.16.0 esptool==5.6.0 pyserial pillow
+
+      - name: Testar backup e recuperação sem firmware de instalação
+        shell: pwsh
+        run: |
+          python -m py_compile tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m py_compile tools/lumi-desk-windows/native_assets.py
+          python -m unittest discover -s tools/lumi-desk-windows -p test_ota.py -v
+          python -m unittest discover -s tools/lumi-desk-windows -p test_native_assets.py -v
+          python -c "import sys; sys.path.insert(0,'tools/lumi-desk-windows'); import lumi_desk_manager as m; assert not m.FIRMWARE_INSTALL_ENABLED; assert not hasattr(m,'check_fw'); print('Flash experimental bloqueado')"
+
+      - name: Criar icon LUMI azul e Wi-Fi amarelo
+        shell: pwsh
+        run: |
+          @'
+          from PIL import Image, ImageDraw
+          im=Image.new("RGBA",(256,256),"white")
+          d=ImageDraw.Draw(im)
+          blue="#0668E7"; gold="#FFC107"
+          d.rounded_rectangle((7,7,249,249),radius=52,fill="white",outline="#E0E9F5",width=5)
+          d.line([(44,126),(128,55),(212,126)],fill=blue,width=17,joint="curve")
+          d.line([(60,128),(60,200),(196,200),(196,128)],fill=blue,width=17,joint="curve")
+          d.rounded_rectangle((94,130,112,158),radius=9,fill=blue)
+          d.rounded_rectangle((144,130,162,158),radius=9,fill=blue)
+          d.arc((106,152,155,190),start=10,end=170,fill=blue,width=9)
+          d.rounded_rectangle((176,68,193,116),radius=5,fill=blue)
+          d.arc((176,23,234,78),start=213,end=331,fill=gold,width=8)
+          d.arc((187,37,223,72),start=218,end=320,fill=gold,width=7)
+          d.ellipse((198,63,208,73),fill=gold)
+          im.save('tools/lumi-desk-windows/LUMI-DESK.ico',sizes=[(256,256),(64,64),(48,48),(32,32),(16,16)])
+          '@ | Set-Content -Encoding UTF8 make_icon.py
+          python make_icon.py
+
+      - name: Compilar executavel autonomo de Windows (um unico EXE)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-CORE-DESK-Manutencao-v0.5.0 --icon tools/lumi-desk-windows/LUMI-DESK.ico --paths tools/lumi-desk-windows --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do gestor" }
+          if (!(Test-Path dist/LUMI-CORE-DESK-Manutencao-v0.5.0.exe)) { throw "Falta o executavel" }
+
+      - name: Teste real do executavel Windows sem ligar ao ESP32
+        shell: pwsh
+        run: |
+          $process=Start-Process -FilePath (Resolve-Path "dist/LUMI-CORE-DESK-Manutencao-v0.5.0.exe") -ArgumentList "--self-test", (Join-Path $PWD "self-test.json") -PassThru
+          if (-not $process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw "Timeout self-test" }
+          if ($process.ExitCode -ne 0) { throw "O executavel nao concluiu self-test" }
+          if (!(Test-Path self-test.json)) { throw "Self-test nao criou relatorio" }
+          $report=Get-Content self-test.json -Raw | ConvertFrom-Json
+          if (!$report.firmware_install_locked -or !$report.esptool_loaded -or !$report.serial_loaded -or $report.mode -ne "maintenance-only") {
+            throw "Instalacao experimental indevidamente ativa ou ferramentas indisponiveis"
+          }
+          Write-Host "LUMI Manager EXE validado com esptool incorporado"
+          Get-Content self-test.json
+
+      - name: Calcular integridade
+        shell: pwsh
+        run: |
+          $hash=(Get-FileHash dist/LUMI-CORE-DESK-Manutencao-v0.5.0.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-CORE-DESK-Manutencao-v0.5.0.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-CORE-DESK.txt
+          Write-Host "SHA256 EXE: $hash"
+
+      - name: Disponibilizar executavel de testes
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-CORE-DESK-MANUTENCAO-WINDOWS
+          path: |
+            dist/LUMI-CORE-DESK-Manutencao-v0.5.0.exe
+            dist/SHA256-LUMI-CORE-DESK.txt
+          retention-days: 30
+
+      - name: Publicar versao experimental para download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-core-desk-maintenance-windows-v0.5.0
+          target_commitish: feature/lumi-core-desk-maintenance-050-20261026
+          name: LUMI CORE DESK Windows 0.5.0 - backups e recuperação
+          prerelease: true
+          make_latest: false
+          body: |
+            LUMI CORE DESK Manutencao 0.5.0, Windows x64 autonomo.
+            Ferramenta separada do HUB Android: nao precisa de ficar ligada quando a LUMI funciona.
+            Um clique faz o backup integral dos 16 MB, validando MAC, boot, OTA, chip e recursos.
+            Permite reanalisar backup privado e recuperar firmware e assets anteriores,
+            com confirmacao explicita e verificacao da gravacao.
+            Guarda copia apenas em Documentos/LUMI-DESK/Backups, nunca na nuvem.
+            INSTALACAO DE FIRMWARE DESATIVADA ate existir modelo nativo pt-PT LUMI treinado e validado.
+            EXE nao contem firmware Hi ESP ou Hey Lumi; nao utiliza erase-flash.
+            Compilado e testado em GitHub Actions Windows; operacao fisica necessita validacao na DESK.
+            EXE sem assinatura Authenticode; nao desativar antivirus ou SmartScreen.
+          files: |
+            dist/LUMI-CORE-DESK-Manutencao-v0.5.0.exe
+            dist/SHA256-LUMI-CORE-DESK.txt

@@ -16,7 +16,7 @@ import android.widget.TextView;
 import java.io.IOException;
 
 /**
- * Previsualizacao LOCAL da camera do Tab 15. Sem gravacao, rede ou servico de fundo.
+ * Previsualizacao LOCAL da camera do dispositivo Android. Sem gravacao ou rede.
  * A camera e libertada quando se fecha o ecrã ou quando a app perde o foco.
  */
 @SuppressWarnings("deprecation")
@@ -31,13 +31,14 @@ public final class CameraRoomActivity extends Activity implements SurfaceHolder.
 
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
+        chosen=getPreferences(MODE_PRIVATE).getInt("preferred_camera",-1);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(12,18,31));
         root.setPadding(14,16,14,12);
         TextView title=new TextView(this);
-        title.setText("CÂMARA DA SALA  ·  TAB 15");
+        title.setText("CÂMARA LOCAL  ·  "+android.os.Build.MODEL);
         title.setTextColor(Color.WHITE);
         title.setTextSize(19);
         title.setGravity(Gravity.CENTER);
@@ -64,11 +65,16 @@ public final class CameraRoomActivity extends Activity implements SurfaceHolder.
 
         LinearLayout actions=new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button switcher=new Button(this);
-        switcher.setText("Alternar câmara");
-        switcher.setAllCaps(false);
-        switcher.setOnClickListener(v->switchCamera());
-        actions.addView(switcher,new LinearLayout.LayoutParams(0,64,1f));
+        Button front=new Button(this);
+        front.setText("Frontal");
+        front.setAllCaps(false);
+        front.setOnClickListener(v->useFacing(Camera.CameraInfo.CAMERA_FACING_FRONT));
+        actions.addView(front,new LinearLayout.LayoutParams(0,64,1f));
+        Button rear=new Button(this);
+        rear.setText("Traseira");
+        rear.setAllCaps(false);
+        rear.setOnClickListener(v->useFacing(Camera.CameraInfo.CAMERA_FACING_BACK));
+        actions.addView(rear,new LinearLayout.LayoutParams(0,64,1f));
         Button close=new Button(this);
         close.setText("Fechar");
         close.setAllCaps(false);
@@ -130,7 +136,10 @@ public final class CameraRoomActivity extends Activity implements SurfaceHolder.
             camera.setPreviewDisplay(holder);
             camera.startPreview();
             chosen=id;
-            state.setText("Imagem em direto apenas neste tablet.");
+            Camera.CameraInfo info=new Camera.CameraInfo();
+            Camera.getCameraInfo(id,info);
+            state.setText("Pré-visualização "+(info.facing==Camera.CameraInfo.CAMERA_FACING_FRONT
+                ?"frontal":"traseira")+" · só neste dispositivo.");
         } catch(Exception ex) {
             stopCamera();
             state.setText("Não foi possível abrir a câmara: " +
@@ -150,12 +159,25 @@ public final class CameraRoomActivity extends Activity implements SurfaceHolder.
         return (info.orientation-degrees+360)%360;
     }
 
-    private void switchCamera() {
-        int count=Camera.getNumberOfCameras();
-        if(count<2) {state.setText("Só existe uma câmara disponível.");return;}
+    private void useFacing(int facing) {
+        int target=-1;
+        Camera.CameraInfo info=new Camera.CameraInfo();
+        for(int i=0;i<Camera.getNumberOfCameras();i++){
+            Camera.getCameraInfo(i,info);
+            if(info.facing==facing){target=i;break;}
+        }
+        if(target<0){
+            state.setText(facing==Camera.CameraInfo.CAMERA_FACING_FRONT
+                ?"Este dispositivo não tem câmara frontal disponível."
+                :"Este dispositivo não tem câmara traseira disponível.");
+            return;
+        }
+        if(chosen==target && camera!=null)return;
         stopCamera();
-        chosen=(selectCamera()+1)%count;
-        state.setText("A alternar câmara...");
+        chosen=target;
+        getPreferences(MODE_PRIVATE).edit().putInt("preferred_camera",chosen).apply();
+        state.setText("A abrir câmara "+(facing==Camera.CameraInfo.CAMERA_FACING_FRONT
+            ?"frontal...":"traseira..."));
         startCamera();
     }
 

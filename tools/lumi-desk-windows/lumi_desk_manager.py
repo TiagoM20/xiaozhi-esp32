@@ -16,7 +16,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from native_assets import merge as merge_native_assets, parse as inspect_assets
+from native_assets import parse as inspect_assets
 
 FLASH = 0x1000000
 APP_OFFSET = 0x20000
@@ -26,19 +26,8 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-EXPECTED_HASH = "2183497fe5780fb98344cc0903bc0953f28a915a239e94cf4b2548c5a0aba189"
-FW_NAME = "LUMI-NATIVE-HI-ESP-app.bin"
-MODEL_NAME = "LUMI-NATIVE-HI-ESP-model-template.bin"
-MODEL_HASH = "c20ae0c4b916ab43f557f40517e1d7b01bfac1d82d6fc0275e9aad961db23c00"
-
-
-def resource(name):
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return root / name
-
-
-def get_fw():
-    return resource(FW_NAME)
+# Backup e recuperação apenas. Firmware "Lumi" desativado até modelo validado.
+FIRMWARE_INSTALL_ENABLED = False
 
 
 def check_app(data, want=None):
@@ -51,27 +40,6 @@ def check_app(data, want=None):
     if name != "xiaozhi" or (want and version != want):
         raise ValueError("Imagem de firmware inesperada (projeto/versao).")
     return version
-
-
-def check_fw():
-    fw = get_fw()
-    if not fw.is_file():
-        raise ValueError("Firmware Hi ESP 2.5.3 nao foi incluido neste executavel.")
-    data = fw.read_bytes()
-    if not 1000000 < len(data) <= APP_LENGTH:
-        raise ValueError("Tamanho do firmware invalido.")
-    check_app(data, "2.5.3")
-    if hashlib.sha256(data).hexdigest() != EXPECTED_HASH:
-        raise ValueError("O firmware nao corresponde ao binario aprovado no GitHub.")
-    template = resource(MODEL_NAME)
-    if not template.is_file() or hashlib.sha256(template.read_bytes()).hexdigest() != MODEL_HASH:
-        raise ValueError("Modelo WakeNet nativo ausente ou nao validado.")
-    files, index = inspect_assets(template.read_bytes())
-    if index.get("srmodels") != "srmodels.bin" or "srmodels.bin" not in files:
-        raise ValueError("WakeNet nao encontrado no pacote nativo.")
-    if "multinet_model" in index:
-        raise ValueError("Modelo nativo ainda contem MultiNet; bloqueado.")
-    return data
 
 
 def select_ota(otadata):
@@ -200,7 +168,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI DESK | HI ESP Nativo 2.5.3")
+        self.master.title("LUMI CORE | Manutenção DESK 0.5.0")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -212,9 +180,9 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="WakeNet9 nativo  •  Hi ESP  •  Raquel PT-PT  •  Seguimento de conversa",
+        tk.Label(top, text="Windows opcional  •  Backup e recuperação seguros  •  Sem instalar firmware de testes",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
-        tk.Label(top, text="CÓPIA COMPLETA ANTES DE QUALQUER GRAVAÇÃO",
+        tk.Label(top, text="UMA CÓPIA · UM CLIQUE  |  FIRMWARE LUMI AGUARDA MODELO",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
 
         conn = tk.Frame(master, bg="#18253A")
@@ -233,13 +201,14 @@ class LumiManager:
 
         operations = tk.Frame(master, bg="#0C1321")
         operations.pack(fill="x", padx=24, pady=10)
-        self.backup_btn = self.op_button(operations, "1  ANALISAR E FAZER CÓPIA", "#0668E7",
+        self.backup_btn = self.op_button(operations, "1  FAZER BACKUP COMPLETO (1 CLIQUE)", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR HI ESP NATIVO 2.5.3", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR FIRMWARE LUMI (AINDA INDISPONÍVEL)", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
-        self.restore_btn = self.op_button(operations, "3  REPOR UMA CÓPIA", "#365274",
+        self.install_btn.configure(state="disabled")
+        self.restore_btn = self.op_button(operations, "3  RECUPERAR UMA CÓPIA (CONFIRMAÇÃO)", "#365274",
                                           self.do_restore)
         self.restore_btn.pack(fill="x", pady=4)
         self.inspect_btn = self.op_button(operations,
@@ -261,11 +230,7 @@ class LumiManager:
                  font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=25, pady=(0, 16))
 
         self.refresh_ports()
-        try:
-            check_fw()
-            self.say("Firmware nativo Hi ESP e modelo validados por SHA256.")
-        except Exception as err:
-            self.say("ATENÇÃO: " + str(err))
+        self.say("Instalação de firmware bloqueada até existir modelo nativo pt-PT Lumi.")
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
         self.say("Os backups ficam em Documentos\\LUMI-DESK\\Backups e contêm dados privados.")
         self.master.after(100, self.drain)
@@ -325,7 +290,7 @@ class LumiManager:
     def lock_buttons(self, working):
         for button in (self.backup_btn, self.install_btn, self.restore_btn,
                        self.refresh_btn, self.test_btn, self.inspect_btn):
-            button.configure(state="disabled" if working else "normal")
+            button.configure(state="disabled" if (working or button is self.install_btn) else "normal")
 
     def start(self, action, arg=None):
         if self.working:
@@ -512,65 +477,19 @@ class LumiManager:
     def worker(self, action, port, arg):
         self.current_port = port
         try:
-            check_fw()
+            if action not in ("test", "backup", "restore"):
+                raise ValueError("Instalação bloqueada: o modelo Lumi ainda não está validado.")
             self.say("\n--- " + action.upper() + " | " + port + " ---")
             self.esp("flash-id")
             mac = self.mac()
             if action == "test":
                 self.events.put(("ok", "LUMI DESK detetada em " + port + "."))
-            elif action in ("backup", "install"):
+            elif action == "backup":
                 folder, source, report = self.acquire_backup(mac)
                 self.last_backup = str(source)
-                if action == "backup":
-                    self.events.put(("ok", "Cópia e diagnóstico concluídos.\n\n"
-                                     + str(folder)
-                                     + "\n\nNão foi feita qualquer gravação."))
-                else:
-                    fw = get_fw()
-                    self.say("A combinar WakeNet nativo com os GIFs originais.")
-                    old = source.read_bytes()
-                    old_assets = old[ASSETS_OFFSET:ASSETS_OFFSET+ASSETS_LENGTH]
-                    new_assets, changes = merge_native_assets(
-                        old_assets, resource(MODEL_NAME).read_bytes())
-                    merged_path = folder / "assets-com-wakenet-e-gifs-originais.bin"
-                    merged_path.write_bytes(new_assets)
-                    (folder / "verificacao-recursos.json").write_text(
-                        json.dumps(changes,ensure_ascii=False,indent=2),encoding="utf-8")
-                    self.say("GIFs preservados: " + str(changes["gifs_preservados"]))
-                    self.say("Restantes recursos preservados: " + str(changes["recursos_preservados"]))
-                    if not self.choose("Instalação nativa Hi ESP",
-                        "Backup integral confirmado.\n"
-                        + str(changes["gifs_preservados"]) + " GIFs preservados sem alterações.\n\n"
-                        "Wake word: Hi ESP (WakeNet9 nativo).\n"
-                        "Raquel continua PT-PT, com seguimento durante cerca de 15s.\n\n"
-                        "ATENÇÃO: esta instalação grava DUAS partições:\n"
-                        "• App: " + report["ota_ativo"] + " (" + report["offset_ativo"] + ")\n"
-                        "• Recursos: assets (0x800000), com os GIFs originais.\n"
-                        "Existe backup integral para repor ambas.\n\n"
-                        "Confirmas a instalação experimental?"):
-                        self.say("Instalação cancelada: nada gravado.")
-                    else:
-                        offset = int(report["offset_ativo"],16)
-                        self.verify_ota_unchanged(source)
-                        try:
-                            self.say("Fase 1/2: escrever assets repacotados com WakeNet.")
-                            self.esp("--after","no-reset","write-flash",hex(ASSETS_OFFSET),merged_path)
-                            self.verify_readback(merged_path,ASSETS_OFFSET)
-                            self.say("Fase 2/2: atualizar aplicação.")
-                            self.esp("--after","no-reset","write-flash",hex(offset),fw)
-                            self.verify_readback(fw,offset)
-                        except Exception as error:
-                            self.say("Gravação interrompida: " + str(error))
-                            try:
-                                self.restore_both_from_backup(source,report)
-                            except Exception as rollback:
-                                raise RuntimeError("RECUPERAÇÃO NÃO CONFIRMADA: "+str(rollback)
-                                                   +". NÃO desligues USB. Backup: "+str(source))
-                            raise RuntimeError("Instalação falhou mas backup app+assets foi reposto.")
-                        self.events.put(("ok",
-                            "Hi ESP instalado e verificado.\n"
-                            "Reinicia a DESK e diz 'Hi ESP'.\n"
-                            "Depois de responder, Raquel continua a escutar."))
+                self.events.put(("ok", "Cópia integral de 16 MB verificada.\n\n"
+                                 + str(folder)
+                                 + "\n\nNão foi feita qualquer gravação na DESK."))
             elif action == "restore":
                 original = Path(arg)
                 if original.name != "flash-integral-16MB.bin":
@@ -611,7 +530,9 @@ class LumiManager:
         self.start("backup")
 
     def do_install(self):
-        self.start("install")
+        messagebox.showinfo("Firmware Lumi pendente",
+            "A instalação estará disponível quando o modelo português Lumi "
+            "estiver treinado e validado. Este gestor não contém firmware de testes.")
 
     def do_restore(self):
         file = filedialog.askopenfilename(
@@ -638,8 +559,8 @@ if __name__ == "__main__":
         import esptool
         from serial.tools import list_ports
         output = {
-            "candidate_hash_ok": bool(check_fw()),
-            "version": check_app(check_fw(), "2.5.3"),
+            "mode": "maintenance-only",
+            "firmware_install_locked": not FIRMWARE_INSTALL_ENABLED,
             "esptool_loaded": bool(esptool),
             "serial_loaded": bool(list_ports),
             "tkinter_loaded": bool(tk),

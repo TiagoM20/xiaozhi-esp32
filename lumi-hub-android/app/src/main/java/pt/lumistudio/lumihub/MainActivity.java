@@ -694,6 +694,91 @@ public final class MainActivity extends Activity {
         draw();
     }
 
+
+    private void drawLumi() {
+        heading("Lumi","O essencial para a tua assistente.");
+        LinearLayout info=panel();
+        info.addView(label("LUMI DESK  ·  ESP32-S3",20,WHITE,true));
+        add(info,label("Raquel PT-PT · Agente XiaoZhi",14,CYAN,true),7);
+        add(info,label("A personalidade e a voz reais são configuradas no XiaoZhi. "
+            +"O tablet não altera a conta sem uma integração autorizada.",13,MUTED,false),7);
+        add(info,button("Abrir consola XiaoZhi",true,
+            ()->openExternal("https://xiaozhi.me/console/agents")),11);
+        add(stage,info,13);
+
+        LinearLayout contents=panel();
+        contents.addView(label("Histórias e memórias",18,WHITE,true));
+        add(contents,label("Rascunhos guardados localmente no Blackview.",13,MUTED,false),6);
+        add(contents,button("Abrir biblioteca",false,()->{
+            page="Biblioteca";draw();
+        }),10);
+        add(stage,contents,12);
+
+        LinearLayout maintain=panel();
+        maintain.addView(label("Firmware e manutenção",18,WHITE,true));
+        add(maintain,label("Instalações, backups e recuperação num clique "
+            +"pelo gestor Windows opcional. A wake word «Lumi» continua pendente.",13,MUTED,false),7);
+        add(maintain,button("Ferramentas de manutenção",false,this::showDeskMaintenance),9);
+        add(stage,maintain,12);
+
+        LinearLayout activity=panel();
+        activity.addView(label("Diagnóstico da DESK",18,WHITE,true));
+        add(activity,button("Ver histórico local",false,()->
+            startActivity(new Intent(this,DeskLogActivity.class))),10);
+        add(stage,activity,12);
+    }
+
+    private void showDeskMaintenance() {
+        new AlertDialog.Builder(this)
+            .setTitle("Manutenção LUMI DESK")
+            .setMessage("O LUMI CORE mantém utilidade como ferramenta Windows de manutenção: "
+                +"backups integrais, recuperação e instalação de firmware com um clique.\n\n"
+                +"O PC não precisa de ficar ligado para usar a LUMI.\n\n"
+                +"Não instales versões experimentais de ativação "
+                +"enquanto aguardamos o modelo português treinado «Lumi». "
+                +"Mantém a cópia integral de segurança.")
+            .setNegativeButton("Fechar",null)
+            .setPositiveButton("Ver gestores oficiais",(d,w)->openExternal(
+                "https://github.com/TiagoM20/xiaozhi-esp32/releases"))
+            .show();
+    }
+
+    private void drawSettings() {
+        heading("Definições","Ligações, atualizações e manutenção.");
+        LinearLayout updates=panel();
+        updates.addView(label("Atualizações do HUB",18,WHITE,true));
+        add(updates,label("Versões assinadas, testes e histórico.",13,MUTED,false),6);
+        add(updates,button("Consultar atualizações",true,()->{
+            page="Atualizações";updatesTab="Versões";draw();
+        }),10);
+        add(stage,updates,12);
+        LinearLayout look=panel();
+        look.addView(label("Aparência",18,WHITE,true));
+        add(look,button("Escolher tema",false,()->{
+            page="Atualizações";updatesTab="Temas";draw();
+        }),10);
+        add(stage,look,12);
+        LinearLayout home=panel();
+        home.addView(label("Home Assistant",18,WHITE,true));
+        add(home,label("Integração em preparação. "
+            +"Apenas os dispositivos já ligados têm controlo real.",13,MUTED,false),7);
+        add(home,button("Documentação oficial",false,()->openExternal(
+            "https://www.home-assistant.io/integrations/")),9);
+        add(stage,home,12);
+        LinearLayout advanced=panel();
+        advanced.addView(label("Ferramentas e dispositivos",18,WHITE,true));
+        add(advanced,button("Todos os dispositivos",false,()->{
+            page="Dispositivos";draw();
+        }),8);
+        add(advanced,button("Manutenção da DESK (Windows)",false,this::showDeskMaintenance),7);
+        add(advanced,button("Ligação CORE Windows (legado)",false,()->
+            startActivity(new Intent(this,LumiCorePairActivity.class))),7);
+        add(advanced,button("Estado do tablet",false,()->{
+            activeDevice="tablet";page="Dispositivos";draw();
+        }),7);
+        add(stage,advanced,12);
+    }
+
     private void drawDevices() {
         heading("Dispositivos","Todos os equipamentos, incluindo os que ainda vais configurar.");
         drawSelectedDevice();

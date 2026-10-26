@@ -63,7 +63,7 @@ public final class MainActivity extends Activity {
     private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
-    private final String[] navItems = {"Casa", "Lumi", "Biblioteca"};
+    private final String[] navItems = {"Casa", "Dispositivos", "Lumi"};
     private String page = "Casa";
     private String activeDevice = "tv";
     private LinearLayout stage;
@@ -303,6 +303,8 @@ public final class MainActivity extends Activity {
         if ("Dispositivos".equals(page)) drawDevices();
         else if ("Lumi".equals(page)) drawLumi();
         else if ("Biblioteca".equals(page)) drawLibrary();
+        else if ("Pessoas".equals(page)) drawPeople();
+        else if ("Planta".equals(page)) drawFloorplan();
         else if ("Definições".equals(page)) drawSettings();
         else if ("Atualizações".equals(page)) drawUpdates();
         else drawStation();
@@ -361,7 +363,7 @@ public final class MainActivity extends Activity {
         TextView lumi = label("LUMI", 12, WHITE, true);
         lumi.setGravity(Gravity.CENTER);
         add(sidebar, lumi, 4);
-        String[] symbols = {"⌂", "◉", "▤"};
+        String[] symbols = {"⌂", "▦", "◉"};
         for (int i = 0; i < navItems.length; i++) {
             final String name = navItems[i];
             boolean selected = name.equals(page);
@@ -462,8 +464,7 @@ public final class MainActivity extends Activity {
             if (!isFinishing() && "Casa".equals(page)) draw();
         });
         LinearLayout topControls=horizontal();
-        TextView homeLabel=label("PAINEL DOMÉSTICO   /   REBORDOSA · PAREDES",12,CYAN,true);
-        addWeighted(topControls,homeLabel,1,0);
+        addWeighted(topControls,new TextView(this),1,0);
         topControls.addView(button("Apagar ecrã",false,this::screenOff));
         add(stage,topControls,1);
 
@@ -478,7 +479,7 @@ public final class MainActivity extends Activity {
         hero.setBackground(banner);
         hero.setPadding(dp(22),dp(18),dp(20),dp(16));
         hero.setMinimumHeight(dp(187));
-        hero.addView(label("CASA · REBORDOSA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
+        hero.addView(label("A TUA CASA",13,themeId==2?currentPalette.tileText:Color.rgb(198,223,255),true));
 
         LinearLayout info=horizontal();
         LinearLayout clockGroup=vertical();
@@ -525,7 +526,7 @@ public final class MainActivity extends Activity {
         add(noticePanel,label("●   TV DA SALA    ·    " +
             (savedIp().isEmpty()?"Por configurar":"Ligação por verificar"),
             12,savedIp().isEmpty()?GOLD:CYAN,false),8);
-        add(noticePanel,label("●   TAB 15    ·    " + battery() + "% de bateria",
+        add(noticePanel,label("●   " + android.os.Build.MODEL + "    ·    " + battery() + "% de bateria",
             12,GREEN,false),8);
         LinearLayout shortcuts=horizontal();
         addWeighted(shortcuts,button("Dispositivos",false,()->{
@@ -549,7 +550,7 @@ public final class MainActivity extends Activity {
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        String[] favorites={"lumi","tv","vacuum","camera_sala","tablet","camera"};
+        String[] favorites={"tv","vacuum","camera_sala","camera","ac","spotify"};
         int index=0;
         for(String key:favorites) {
             for(HomeDevices.Device device:HomeDevices.ALL) {
@@ -657,7 +658,7 @@ public final class MainActivity extends Activity {
         entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         add(form,entry,11);
-        add(form,label("O token fica no armazenamento privado do Tab 15. Não o publiques no GitHub.",12,MUTED,false),7);
+        add(form,label("O token fica no armazenamento privado deste dispositivo. Não o publiques no GitHub.",12,MUTED,false),7);
         new AlertDialog.Builder(this).setTitle("LUMI DESK · Voz e MCP")
             .setView(form)
             .setNeutralButton("Remover ligação",(dialog,which)->{
@@ -708,7 +709,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout contents=panel();
         contents.addView(label("Histórias e memórias",18,WHITE,true));
-        add(contents,label("Rascunhos guardados localmente no Blackview.",13,MUTED,false),6);
+        add(contents,label("Rascunhos e memórias locais para a LUMI.",13,MUTED,false),6);
         add(contents,button("Abrir biblioteca",false,()->{
             page="Biblioteca";draw();
         }),10);
@@ -716,16 +717,11 @@ public final class MainActivity extends Activity {
 
         LinearLayout maintain=panel();
         maintain.addView(label("Firmware e manutenção",18,WHITE,true));
-        add(maintain,label("Instalações, backups e recuperação num clique "
-            +"pelo gestor Windows opcional. A wake word «Lumi» continua pendente.",13,MUTED,false),7);
+        add(maintain,label("Backups e recuperação no gestor Windows opcional. "
+            +"A wake word «Lumi» continua pendente.",13,MUTED,false),7);
         add(maintain,button("Ferramentas de manutenção",false,this::showDeskMaintenance),9);
         add(stage,maintain,12);
 
-        LinearLayout activity=panel();
-        activity.addView(label("Diagnóstico da DESK",18,WHITE,true));
-        add(activity,button("Ver histórico local",false,()->
-            startActivity(new Intent(this,DeskLogActivity.class))),10);
-        add(stage,activity,12);
     }
 
     private void showDeskMaintenance() {
@@ -844,15 +840,12 @@ public final class MainActivity extends Activity {
         add(stage,home,12);
         LinearLayout advanced=panel();
         advanced.addView(label("Ferramentas e dispositivos",18,WHITE,true));
-        add(advanced,button("Todos os dispositivos",false,()->{
-            page="Dispositivos";draw();
-        }),8);
+        add(advanced,button("Estado deste dispositivo",false,this::showTabletStatus),8);
         add(advanced,button("Manutenção da DESK (Windows)",false,this::showDeskMaintenance),7);
-        add(advanced,button("Ligação CORE Windows (legado)",false,()->
-            startActivity(new Intent(this,LumiCorePairActivity.class))),7);
-        add(advanced,button("Estado do tablet",false,()->{
-            activeDevice="tablet";page="Dispositivos";draw();
-        }),7);
+        // Ponte antiga removida da navegação principal; firmware e backups
+        // continuam no gestor CORE Windows, independente do HUB Android.
+        add(advanced,button("Histórico técnico da ponte (local)",false,()->
+            startActivity(new Intent(this,DeskLogActivity.class))),7);
         add(stage,advanced,12);
     }
 
@@ -864,15 +857,18 @@ public final class MainActivity extends Activity {
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        for(int i=0;i<HomeDevices.ALL.length;i++){
-            addHomeTile(grid,HomeDevices.ALL[i],i,cols);
+        int index=0;
+        for(HomeDevices.Device item:HomeDevices.ALL){
+            if(item.key.startsWith("phone_") || "lumi".equals(item.key)
+                || "tablet".equals(item.key)) continue;
+            addHomeTile(grid,item,index++,cols);
         }
         add(stage,grid,11);
     }
 
     private void drawSelectedDevice() {
         if("tv".equals(activeDevice)) tvDetails();
-        else if("lumi".equals(activeDevice)) lumiDetails();
+        else if("lumi".equals(activeDevice)) drawLumi();
         else if("tablet".equals(activeDevice)) tabletDetails();
         else if("camera".equals(activeDevice)) cameraDetails();
         else if("camera_sala".equals(activeDevice)) cameraRoomDetails();
@@ -885,7 +881,7 @@ public final class MainActivity extends Activity {
         else if("ac".equals(activeDevice)) placeholderDetails("Ar condicionado da Sala",
             "A integração depende da marca e do protocolo Wi-Fi ou infravermelhos. Mantemos o equipamento no painel.");
         else if("plug".equals(activeDevice)) placeholderDetails("Tomada inteligente",
-            "Ainda não foi instalada. Quando estiver disponível, poderemos configurar a carga automática do Tab 15.");
+            "Ainda não foi instalada. A gestão automática depende de uma tomada integrada.");
         else placeholderDetails("Espaço para novos dispositivos",
             "A Home já tem um lugar reservado para os próximos equipamentos. Para integrar um novo dispositivo, teremos de confirmar o modelo e método de ligação.");
     }
@@ -939,7 +935,7 @@ public final class MainActivity extends Activity {
                     Intent request=new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                     request.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,admin);
                     request.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Permitir ao LUMI Hub apagar o ecrã do Tab 15 quando pressionares o botão.");
+                        "Permitir ao LUMI Hub apagar o ecrã deste dispositivo.");
                     startActivityForResult(request,ADMIN_REQUEST);
                 }).show();
             return;
@@ -1068,7 +1064,7 @@ public final class MainActivity extends Activity {
         mac.setHint("MAC da TV (AA:BB:CC:DD:EE:FF)");
         mac.setText(p.getString("tv_mac",""));
         add(form,mac,11);
-        add(form,label("O endereço IP e o MAC ficam guardados apenas no Tab 15.",12,
+        add(form,label("O endereço IP e o MAC ficam guardados apenas neste dispositivo.",12,
             Color.rgb(91,96,110),false),7);
         new AlertDialog.Builder(this).setTitle("TV da Sala • Rede")
             .setView(form).setNegativeButton("Cancelar",null)
@@ -1202,7 +1198,7 @@ public final class MainActivity extends Activity {
     }
     private void tabletDetails() {
         LinearLayout c=detail();
-        c.addView(label("Blackview Tab 15",23,WHITE,true));
+        c.addView(label(android.os.Build.MANUFACTURER+" "+android.os.Build.MODEL,23,WHITE,true));
         add(c,label("Central LUMI Hub • Android",13,GREEN,true),7);
         add(c,label(battery()+"%",44,WHITE,true),11);
         add(c,label(charging()?"A carregar":"A funcionar com bateria",14,MUTED,false),4);
@@ -1210,15 +1206,14 @@ public final class MainActivity extends Activity {
         add(c,button(serviceRunning()?"Parar central":"Iniciar central",
             true,this::switchService),10);
         add(c,button("Ver logs e diagnóstico",false,this::diagnostics),8);
-        add(c,button("Apagar ecrã do Tab 15",false,this::screenOff),8);
-        add(c,label("Gestão futura da bateria: ligar a 40%, desligar a 80%. "
-            +"Sem tomada inteligente, a aplicação apenas monitoriza.",13,MUTED,false),14);
+        add(c,button("Apagar ecrã deste dispositivo",false,this::screenOff),8);
+        add(c,label("A gestão de energia depende das capacidades deste dispositivo.",13,MUTED,false),14);
         add(stage,c,16);
     }
 
     private void drawMemories() {
         if(!"Biblioteca".equals(page))
-            heading("Memórias","Informações que decides guardar no Tab 15.");
+            heading("Memórias","Informações guardadas apenas neste dispositivo.");
         LinearLayout c=detail();
         c.addView(label(memories.count()+" memórias guardadas",20,WHITE,true));
         add(c,label("Estas memórias estão guardadas localmente. Ainda não são "
@@ -1301,8 +1296,8 @@ public final class MainActivity extends Activity {
     private void drawThemeSelector() {
         LinearLayout intro=panel();
         intro.addView(label("Escolhe o ambiente da tua casa",20,WHITE,true));
-        add(intro,label("Ao tocares num tema, as cores da Home, dos tiles e dos "
-            +"restantes ecrãs mudam de imediato. A escolha fica guardada no Tab 15.",
+        add(intro,label("Ao escolheres um tema, as cores da Casa e dos cartões "
+            +"mudam de imediato. Fica guardado neste dispositivo.",
             13,MUTED,false),7);
         add(stage,intro,14);
         GridLayout grid=new GridLayout(this);

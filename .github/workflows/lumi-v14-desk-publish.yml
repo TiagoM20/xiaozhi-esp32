@@ -1,0 +1,53 @@
+name: LUMI DESK V14 - Publicar firmware ja compilado
+
+on:
+  push:
+    branches: [feature/lumi-v14-hub-desk-20261027]
+    paths:
+      - '.github/workflows/lumi-v14-desk-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified ESP32-S3 build from workflow 40531636018
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 40531636018
+          name: LUMI-DESK-V14-EXPERIMENTAL
+          path: dist
+      - name: Check real firmware and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          test -s LUMI-DESK-V14-APP-ONLY-0x20000.bin
+          sha256sum -c SHA256-DESK-V14.txt
+          unzip -t LUMI-DESK-V14-EXPERIMENTAL.zip
+          test -s INSTALL-README.txt
+      - name: Publish experimental DESK firmware
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-desk-v14-experimental
+          target_commitish: feature/lumi-v14-hub-desk-20261027
+          name: LUMI DESK V14 - Experimental wake guard and expressions
+          prerelease: true
+          make_latest: false
+          body: |
+            Compilacao ESP-IDF v6.1 concluida com sucesso na run 40531636018,
+            commit fonte 73c25eb947a16c58ca18f1672eab8fa690141ea9.
+            APK HUB V14 separado. Binario para Waveshare ESP32-S3-Touch-LCD-1.54.
+            App-only no endereco de flash 0x20000, sem apagar as particoes assets/NVS.
+            Backup integral obrigatorio antes de instalar.
+            Protecao contra falas espontaneas em idle; expressoes thinking/happy.
+            Wake EN MultiNet 'ola lumi' threshold 55 experimental; reconhecim. PT-PT
+            e integracao com TV ainda necessitam validacao no hardware.
+          files: dist/*

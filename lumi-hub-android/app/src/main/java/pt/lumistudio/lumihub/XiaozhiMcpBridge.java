@@ -23,6 +23,7 @@ public final class XiaozhiMcpBridge {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WebSocketClient client;
     private boolean stopped = true;
+    private final Runnable retry = this::connect;
 
     public XiaozhiMcpBridge(Context context) {
         this.context = context.getApplicationContext();
@@ -36,12 +37,30 @@ public final class XiaozhiMcpBridge {
                 && "api.xiaozhi.me".equalsIgnoreCase(url.getHost())
                 && "/mcp/".equals(url.getPath())
                 && url.getRawQuery() != null
-                && url.getRawQuery().contains("token=");
+                && java.util.Arrays.stream(url.getRawQuery().split("&"))
+                    .anyMatch(item -> item.startsWith("token=") && item.length()>6);
         } catch (Exception ignored) {
             return false;
         }
     }
 
+    public static boolean hasEndpoint(Context c) {
+        return !LumiSecrets.get(c,"mcp_endpoint").isEmpty()
+            || !c.getSharedPreferences("hub",Context.MODE_PRIVATE)
+                .getString("mcp_endpoint","").isEmpty();
+    }
+    private String savedEndpoint() {
+        String secure=LumiSecrets.get(context,"mcp_endpoint");
+        if(!secure.isEmpty())return secure;
+        // Migration V13 -> V14: a legacy URL is encrypted before it is removed.
+        String legacy=prefs.getString("mcp_endpoint","");
+        if(!validEndpoint(legacy))return "";
+        try{
+            LumiSecrets.put(context,"mcp_endpoint",legacy);
+            prefs.edit().remove("mcp_endpoint").apply();
+            return legacy;
+        }catch(Exception e){state("Falha ao proteger token MCP");return "";}
+    }
     private void state(String value) {
         prefs.edit().putString("mcp_state", value).apply();
     }
@@ -53,7 +72,7 @@ public final class XiaozhiMcpBridge {
 
     public void stop() {
         stopped = true;
-        handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacks(retry);
         if (client != null) {
             client.close();
             client = null;
@@ -62,23 +81,33 @@ public final class XiaozhiMcpBridge {
     }
 
     private void reconnect() {
-        if (!stopped) handler.postDelayed(this::connect, 20000);
+        if(!stopped){
+            handler.removeCallbacks(retry);
+            handler.postDelayed(retry,20000);
+        }
     }
 
     private void connect() {
         if (stopped) return;
-        String url = prefs.getString("mcp_endpoint", "");
+        handler.removeCallbacks(retry);
+        String url=savedEndpoint();
         if (!validEndpoint(url)) {
             state("Por configurar");
             return;
         }
         state("A ligar ao XiaoZhi...");
         try {
+            if(client!=null){
+                try{client.close();}catch(Exception ignored){}
+                client=null;
+            }
             WebSocketClient ws = new WebSocketClient(new URI(url)) {
                 @Override public void onOpen(ServerHandshake handshake) {
+                    if(stopped || client!=this){close();return;}
                     state("Ligado ao XiaoZhi");
                 }
                 @Override public void onMessage(String payload) {
+                    if(stopped || client!=this)return;
                     try {
                         JSONObject request = new JSONObject(payload);
                         String method = request.optString("method", "");
@@ -89,7 +118,7 @@ public final class XiaozhiMcpBridge {
                                 .put("protocolVersion", "2024-11-05")
                                 .put("capabilities", new JSONObject().put("tools", new JSONObject()))
                                 .put("serverInfo", new JSONObject()
-                                    .put("name", "LUMI-Hub").put("version", "0.7.0"));
+                                    .put("name", "LUMI-Hub").put("version", "0.14.0"));
                             reply(this, id, result);
                         } else if ("ping".equals(method)) {
                             reply(this, id, new JSONObject());
@@ -108,13 +137,17 @@ public final class XiaozhiMcpBridge {
                     }
                 }
                 @Override public void onClose(int code, String reason, boolean remote) {
-                    if (!stopped) {
+                    if(!stopped && client==this){
+                        client=null;
                         state("Desligado; a tentar novamente");
                         reconnect();
                     }
                 }
                 @Override public void onError(Exception error) {
-                    if (!stopped) state("Falha de ligacao MCP");
+                    if(!stopped && client==this){
+                        state("Falha de ligação MCP; a tentar novamente");
+                        reconnect();
+                    }
                 }
             };
             client = ws;

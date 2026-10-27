@@ -624,6 +624,8 @@ void Application::InitializeProtocol() {
             return;
         }
         if (strcmp(type->valuestring, "notify") == 0) {
+            // V14 private desk: no unsolicited remote audio notifications.
+            if(GetDeviceState()==kDeviceStateIdle)return;
             auto audio_url = cJSON_GetObjectItem(root, "audio_url");
             if (!cJSON_IsString(audio_url) || audio_url->valuestring[0] == '\0') {
                 ESP_LOGW(TAG, "Notify message requires audio_url");
@@ -657,6 +659,14 @@ void Application::InitializeProtocol() {
                 StartNotification(std::move(url), std::move(subtitles));
             });
         } else if (strcmp(type->valuestring, "tts") == 0) {
+            // LUMI V14: never allow an unsolicited cloud TTS packet to
+            // start a conversation while the desk is idle. Voice begins
+            // only after a physical action or a recognised wake phrase.
+            // Existing listening and connecting sessions remain accepted.
+            if (GetDeviceState() == kDeviceStateIdle) {
+                ESP_LOGW(TAG, "LUMI V14: ignored unsolicited TTS in idle");
+                return;
+            }
             auto state = cJSON_GetObjectItem(root, "state");
             if (!cJSON_IsString(state)) {
                 return;
@@ -708,6 +718,7 @@ void Application::InitializeProtocol() {
                 });
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
+            if(GetDeviceState()==kDeviceStateIdle)return;
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
                 Schedule([display, emotion_str = std::string(emotion->valuestring)]() {
@@ -1051,7 +1062,7 @@ void Application::HandleStateChangedEvent() {
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
-            display->SetEmotion("neutral");
+            display->SetEmotion("thinking");
             display->SetChatMessage("system", "");
             break;
         case kDeviceStateListening:
@@ -1075,6 +1086,7 @@ void Application::HandleStateChangedEvent() {
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);
+            display->SetEmotion("happy");
 
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);

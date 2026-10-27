@@ -1,0 +1,101 @@
+name: LUMI HUB V14 - Casa local e voz MCP
+
+on:
+  push:
+    branches: [feature/lumi-v14-hub-desk-20261027]
+    paths:
+      - 'lumi-hub-android/**'
+      - '.github/workflows/lumi-v14-hub.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: lumi-v14-hub-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -e
+          SM="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          yes | "$SM" --licenses >/dev/null || true
+          "$SM" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare audio demo asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          mkdir -p lumi-hub-android/app/src/main/assets
+          curl -fLsS --retry 3 --max-time 60 "https://github.com/TiagoM20/xiaozhi-esp32/releases/download/lumi-voice-ptpt-demo-v0.1/LUMI-Raquel-PTPT-Demo.mp3" -o /tmp/raquel.mp3
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/raquel.mp3 -ar 24000 -ac 1 -c:a libopus -b:a 32k -frame_duration 60 -vbr off -application voip -f ogg /tmp/raquel.ogg
+          python3 tools/lumi-v12/ogg_packets.py /tmp/raquel.ogg lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+      - name: Verify V14 source and compile debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "versionCode 27" lumi-hub-android/app/build.gradle
+          grep -q "LumiSecrets.put(this,\"mcp_endpoint\",url)" lumi-hub-android/app/src/main/java/pt/lumistudio/lumihub/MainActivity.java
+          gradle -p lumi-hub-android :app:assembleDebug --no-daemon --stacktrace
+      - name: Restore original signing identity
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64"
+          test -n "$KEYSTORE_PASSWORD"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+          echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+          echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+      - name: Build signed update
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p lumi-hub-android :app:assembleRelease --no-daemon --stacktrace
+          APK=lumi-hub-android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p output
+          cp "$APK" output/LUMI-HUB-V14-ASSINADO.apk
+          sha256sum output/LUMI-HUB-V14-ASSINADO.apk > output/SHA256-HUB-V14.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-V14-ASSINADO
+          path: output/*
+          retention-days: 30
+      - name: Publish only head commit
+        shell: bash
+        run: |
+          CURRENT="$(git ls-remote origin refs/heads/feature/lumi-v14-hub-desk-20261027 | cut -f1)"
+          if [ "$CURRENT" = "$GITHUB_SHA" ]; then echo "PUBLISH=true" >> "$GITHUB_ENV"; fi
+      - uses: softprops/action-gh-release@v2
+        if: env.PUBLISH == 'true'
+        with:
+          tag_name: lumi-hub-v0.14.0
+          target_commitish: feature/lumi-v14-hub-desk-20261027
+          name: LUMI HUB V14 - Casa local e voz MCP
+          prerelease: true
+          make_latest: false
+          body: |
+            Android V14 signed update (versionCode 27), same app ID and signing identity.
+            Direct XiaoZhi MCP bridge > LUMI HUB > LG webOS, no mandatory Home Assistant.
+            Encrypted MCP credential via Android Keystore with V13 migration.
+            Reconnection improvements and clearer controls; Home Assistant is optional.
+            No real appliance has been tested by the GitHub runner. Verify in your home.
+          files: output/*

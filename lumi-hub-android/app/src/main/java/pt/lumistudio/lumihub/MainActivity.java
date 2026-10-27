@@ -538,7 +538,7 @@ public final class MainActivity extends Activity {
         noticePanel.setMinimumHeight(dp(187));
         noticePanel.setBackground(borderFill(currentPalette.statusPanel,13,STROKE));
         noticePanel.addView(label("ESTADO DA CASA",13,WHITE,true));
-        add(noticePanel,label("●   LUMI DESK    ·    " + mcpStatus(),
+        add(noticePanel,label("●   XIAOZHI MCP    ·    " + mcpStatus(),
             12,mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),12);
         add(noticePanel,label("●   TV DA SALA    ·    " +
             (savedIp().isEmpty()?"Por configurar":"Ligação por verificar"),
@@ -560,7 +560,7 @@ public final class MainActivity extends Activity {
         GridLayout grid=new GridLayout(this);
         int cols=landscape()?5:2;
         grid.setColumnCount(cols);
-        String[] favorites={"tv","vacuum","camera_sala","camera","ac","spotify"};
+        String[] favorites={"tv","camera_sala","camera","spotify"};
         int index=0;
         for(String key:favorites) {
             for(HomeDevices.Device device:HomeDevices.ALL) {
@@ -578,16 +578,25 @@ public final class MainActivity extends Activity {
         addWeighted(quick,visualShortcut("Planta da casa","Vista por divisão",
             "floorplan",8,()->{page="Planta";draw();}),1,10);
         add(stage,quick,18);
-        LinearLayout ha=panel();
-        ha.addView(label("HOME ASSISTANT",18,WHITE,true));
-        boolean configured=HomeAssistantClient.isConfigured(this);
-        add(ha,label(configured?"Servidor configurado · consultar estados reais":
-            "Liga o servidor Home Assistant para controlar dispositivos reais.",
+        LinearLayout control=panel();
+        control.addView(label("LUMI · CONTROLO POR VOZ",18,WHITE,true));
+        add(control,label("DESK → XiaoZhi → HUB → TV LG. Sem servidor Home Assistant obrigatório.",
             13,MUTED,false),6);
-        add(ha,button(configured?"Abrir controlo da casa":"Configurar Home Assistant",
-            true,this::openHomeAssistant),10);
-        if(configured)appendHaSnapshot(ha,false,5);
-        add(stage,ha,15);
+        add(control,label("Ponte MCP: "+mcpStatus()+" · Central: "+serviceText(),
+            13,serviceRunning()?CYAN:GOLD,true),9);
+        add(control,button("Configurar ligação MCP do XiaoZhi",true,this::mcpSettings),10);
+        if(!serviceRunning()) add(control,button("Ativar central LUMI",false,this::switchService),8);
+        add(control,button("Testar TV da sala",false,()->{
+            activeDevice="tv";page="Dispositivos";draw();
+        }),8);
+        add(stage,control,15);
+        if(HomeAssistantClient.isConfigured(this)){
+            LinearLayout ha=panel();
+            ha.addView(label("Home Assistant · opcional",16,WHITE,true));
+            add(ha,button("Abrir equipamentos ligados ao HA",false,this::openHomeAssistant),9);
+            appendHaSnapshot(ha,false,5);
+            add(stage,ha,15);
+        }
     }
 
     private void openHomeAssistant(){
@@ -768,37 +777,49 @@ public final class MainActivity extends Activity {
     }
 
     private void mcpSettings() {
-        SharedPreferences p = getSharedPreferences("hub",MODE_PRIVATE);
-        LinearLayout form = vertical();
+        SharedPreferences p=getSharedPreferences("hub",MODE_PRIVATE);
+        LinearLayout form=vertical();
         form.setPadding(dp(18),dp(5),dp(18),dp(5));
-        form.addView(label("Na consola XiaoZhi, abre o agente da LUMI DESK e copia o endereço MCP (wss://api.xiaozhi.me/mcp/?token=...).",14,MUTED,false));
-        EditText entry = new EditText(this);
+        add(form,label("O HUB recebe ferramentas de voz do agente XiaoZhi e envia os comandos à TV LG pela rede local. Não requer Home Assistant.",
+            14,MUTED,false),5);
+        add(form,label("Estado MCP: "+mcpStatus()+" · Central: "+serviceText(),
+            13,serviceRunning()?CYAN:GOLD,true),9);
+        add(form,label("Na consola xiaozhi.me, copia o URL MCP do teu agente (wss://api.xiaozhi.me/mcp/?token=...). O token é encriptado no Android Keystore.",
+            12,MUTED,false),8);
+        EditText entry=new EditText(this);
         entry.setSingleLine(true);
-        entry.setHint(p.getString("mcp_endpoint","").isEmpty() ?
-            "Cola aqui o endereço MCP" : "Ligação configurada · cola aqui para substituir");
+        entry.setHint(XiaozhiMcpBridge.hasEndpoint(this)?
+            "Ligação existente · cola novo URL para substituir":"Colar URL MCP privado do XiaoZhi");
         entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        add(form,entry,11);
-        add(form,label("O token fica no armazenamento privado deste dispositivo. Não o publiques no GitHub.",12,MUTED,false),7);
-        new AlertDialog.Builder(this).setTitle("LUMI DESK · Voz e MCP")
+        add(form,entry,10);
+        new AlertDialog.Builder(this).setTitle("LUMI V14 · DESK → HUB")
             .setView(form)
-            .setNeutralButton("Remover ligação",(dialog,which)->{
-                p.edit().remove("mcp_endpoint")
-                    .putString("mcp_state","Por configurar").apply();
-                restartMcpService();
+            .setNeutralButton("Remover", (dialog,which)->{
+                try{
+                    LumiSecrets.put(this,"mcp_endpoint","");
+                    p.edit().remove("mcp_endpoint").putString("mcp_state","Por configurar").apply();
+                    restartMcpService();
+                }catch(Exception ex){notice("Credenciais","Não foi possível remover o token.");}
             })
             .setNegativeButton("Cancelar",null)
-            .setPositiveButton("Guardar",(dialog,which)->{
+            .setPositiveButton("Guardar e ligar",(dialog,which)->{
                 String url=entry.getText().toString().trim();
-                if(url.isEmpty())return;
-                if(!XiaozhiMcpBridge.validEndpoint(url)) {
-                    notice("Endereço MCP inválido",
-                        "Utiliza o endereço wss://api.xiaozhi.me/mcp/?token=... do teu agente.");
+                if(!XiaozhiMcpBridge.validEndpoint(url)){
+                    notice("URL MCP inválido","Cola o URL completo do agente XiaoZhi, incluindo token.");
                     return;
                 }
-                p.edit().putString("mcp_endpoint",url)
-                    .putString("mcp_state","A iniciar ligação").apply();
-                restartMcpService();
+                try{
+                    LumiSecrets.put(this,"mcp_endpoint",url);
+                    p.edit().remove("mcp_endpoint").putString("mcp_state","A iniciar ligação").apply();
+                    if(!serviceRunning()){
+                        try{
+                            if(Build.VERSION.SDK_INT>=26)startForegroundService(new Intent(this,HubService.class));
+                            else startService(new Intent(this,HubService.class));
+                        }catch(Exception ex){notice("Serviço HUB",ex.getMessage());}
+                    }else restartMcpService();
+                    notice("MCP","Ligação guardada de forma encriptada. Confirma o estado após ligar.");
+                }catch(Exception ex){notice("Credenciais","Falha ao guardar o token no Android Keystore.");}
             }).show();
     }
 
@@ -1154,8 +1175,17 @@ public final class MainActivity extends Activity {
             page="Atualizações";updatesTab="Temas";draw();
         }),10);
         add(stage,look,12);
+        LinearLayout voice=panel();
+        voice.addView(label("DESK → HUB · controlo por voz",18,WHITE,true));
+        add(voice,label("O XiaoZhi envia comandos MCP para esta central; o HUB controla a TV LG sem Home Assistant.",
+            13,MUTED,false),7);
+        add(voice,label("Estado: "+mcpStatus()+" · "+serviceText(),
+            13,serviceRunning()?CYAN:GOLD,true),7);
+        add(voice,button("Configurar ligação MCP",true,this::mcpSettings),8);
+        if(!serviceRunning())add(voice,button("Ativar central",false,this::switchService),7);
+        add(stage,voice,12);
         LinearLayout home=panel();
-        home.addView(label("Home Assistant",18,WHITE,true));
+        home.addView(label("Home Assistant · opcional",18,WHITE,true));
         add(home,label(HomeAssistantClient.isConfigured(this)?
             "Servidor configurado. Vê estados e controla equipamentos reais.":
             "Associa um servidor para obter estados e comandar dispositivos.",
@@ -1174,7 +1204,7 @@ public final class MainActivity extends Activity {
     }
 
     private void drawDevices() {
-        heading("Dispositivos","Todos os equipamentos, incluindo os que ainda vais configurar.");
+        heading("Dispositivos","Equipamentos com ações reais ou aplicações instaladas.");
         drawSelectedDevice();
 
         sectionTitle("A MINHA CASA","Os mesmos equipamentos que encontras na Home.");
@@ -1183,8 +1213,8 @@ public final class MainActivity extends Activity {
         grid.setColumnCount(cols);
         int index=0;
         for(HomeDevices.Device item:HomeDevices.ALL){
-            if(item.key.startsWith("phone_") || "lumi".equals(item.key)
-                || "tablet".equals(item.key)) continue;
+            if(!("tv".equals(item.key)||"camera".equals(item.key)
+                ||"camera_sala".equals(item.key)||"spotify".equals(item.key)))continue;
             addHomeTile(grid,item,index++,cols);
         }
         add(stage,grid,11);

@@ -1,0 +1,130 @@
+name: LUMI DESK V14 - Firmware experimental PT-PT
+
+on:
+  push:
+    branches: [feature/lumi-v14-hub-desk-20261027]
+    paths:
+      - 'main/application.cc'
+      - 'main/application.h'
+      - '.github/workflows/lumi-v14-desk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: lumi-v14-desk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure PT-PT desk (conservative hardware profile)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          data=json.loads(path.read_text())
+          overrides={
+              "CONFIG_USE_DEVICE_AEC":"n",
+              "CONFIG_USE_SERVER_AEC":"n",
+              "CONFIG_WAKE_WORD_DISABLED":"n",
+              "CONFIG_USE_ESP_WAKE_WORD":"n",
+              "CONFIG_USE_AFE_WAKE_WORD":"n",
+              "CONFIG_USE_CUSTOM_WAKE_WORD":"y",
+              "CONFIG_CUSTOM_WAKE_WORD":'"ola lumi"',
+              "CONFIG_CUSTOM_WAKE_WORD_DISPLAY":'"Olá Lumi"',
+              "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD":"55",
+              "CONFIG_SEND_WAKE_WORD_DATA":"n",
+              "CONFIG_SR_MN_CN_NONE":"y",
+              "CONFIG_SR_MN_EN_MULTINET6_QUANT":"y",
+          }
+          opts=data["builds"][0]["sdkconfig_append"]
+          opts=[x for x in opts if x.split("=",1)[0] not in overrides]
+          opts += [f"{k}={v}" for k,v in overrides.items()]
+          data["builds"][0]["sdkconfig_append"]=opts
+          path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+"\n")
+          PY
+      - name: Check V14 voice guard and device target
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          c=Path("main/application.cc").read_text()
+          assert 'LUMI V14: ignored unsolicited TTS in idle' in c
+          assert 'LUMI V14: no unsolicited' not in c
+          assert 'if(GetDeviceState()==kDeviceStateIdle)return;' in c
+          assert 'LUMI: 15s silence, closing conversation' in c
+          assert 'audio_service_.EnableWakeWordDetection(false);' in c
+          print("Firmware guards validated")
+          PY
+      - name: Build Waveshare ESP32-S3 Touch LCD 1.54
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          grep -qx 'CONFIG_USE_CUSTOM_WAKE_WORD=y' sdkconfig
+          grep -qx 'CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=55' sdkconfig
+          grep -qx 'CONFIG_SR_MN_EN_MULTINET6_QUANT=y' sdkconfig
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          test -s build/xiaozhi.bin
+      - name: Package application image only (preserve assets/OTA)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from zipfile import ZipFile,ZIP_DEFLATED
+          from pathlib import Path
+          f=Path("build/xiaozhi.bin")
+          assert f.stat().st_size > 1000000
+          Path("output").mkdir(exist_ok=True)
+          p=Path("output/LUMI-DESK-V14-APP-ONLY-0x20000.bin")
+          p.write_bytes(f.read_bytes())
+          import hashlib
+          Path("output/SHA256-DESK-V14.txt").write_text(hashlib.sha256(p.read_bytes()).hexdigest()+"  "+p.name+"\n")
+          Path("output/INSTALL-README.txt").write_text(
+            "LUMI DESK V14 EXPERIMENTAL - ESP32-S3-Touch-LCD-1.54\n"
+            "Build application image only. Flash ONLY at address 0x20000 after a full backup.\n"
+            "NEVER erase flash or write this app image to address 0x0.\n"
+            "Keep the existing OTA, NVS, and assets partitions.\n"
+            "Wake phrase 'Ola Lumi' uses the EN MultiNet model; Portuguese recognition is unverified.\n"
+            "Wake threshold 55; no wake audio upload; unexpected idle TTS/notifications are blocked.\n"
+            "Existing Raquel voice is configured at XiaoZhi server, not in this firmware.\n"
+            "Bench test required before replacing the known-working firmware.\n")
+          with ZipFile("output/LUMI-DESK-V14-EXPERIMENTAL.zip","w",ZIP_DEFLATED) as z:
+            for x in (p,Path("output/SHA256-DESK-V14.txt"),Path("output/INSTALL-README.txt")):z.write(x,x.name)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-DESK-V14-EXPERIMENTAL
+          path: output/*
+          retention-days: 30
+      - name: Publish only head commit
+        shell: bash
+        run: |
+          CURRENT="$(git ls-remote origin refs/heads/feature/lumi-v14-hub-desk-20261027 | cut -f1)"
+          if [ "$CURRENT" = "$GITHUB_SHA" ]; then echo "PUBLISH=true" >> "$GITHUB_ENV"; fi
+      - uses: softprops/action-gh-release@v2
+        if: env.PUBLISH == 'true'
+        with:
+          tag_name: lumi-desk-v14-experimental
+          target_commitish: feature/lumi-v14-hub-desk-20261027
+          name: LUMI DESK V14 experimental - Wake guard e expressoes
+          prerelease: true
+          make_latest: false
+          body: |
+            Experimental firmware app image for Waveshare ESP32-S3-Touch-LCD-1.54.
+            Block unsolicited TTS and notification while idle, improve facial states.
+            Higher English MultiNet 'Ola Lumi' threshold: recognition in pt-PT NOT validated.
+            The known-good current firmware must be preserved until physical tests pass.
+            Flash only the app image at 0x20000; backup first. Do not erase or overwrite assets.
+          files: output/*

@@ -29,6 +29,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.ImageView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -79,6 +81,8 @@ public final class MainActivity extends Activity {
     private String libraryTab = "Histórias";
     private static final int PICK_MEMORY_JSON = 9441;
     private static final int PICK_FLOORPLAN = 9442;
+    private static final int PICK_PERSON_AVATAR = 9443;
+    private String pendingPersonAvatarKey="";
     private final android.os.Handler weatherHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable weatherTick = new Runnable() {
@@ -222,6 +226,20 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==PICK_PERSON_AVATAR){
+            if(resultCode==RESULT_OK && data!=null && data.getData()!=null &&
+               !pendingPersonAvatarKey.isEmpty()){
+                try{
+                    getContentResolver().takePersistableUriPermission(data.getData(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    getSharedPreferences("hub",MODE_PRIVATE).edit().putString(
+                        "person_avatar_"+pendingPersonAvatarKey,data.getData().toString()).apply();
+                    page="Pessoas";draw();
+                }catch(Exception e){notice("Fotografia","Não foi possível guardar a imagem.");}
+            }
+            pendingPersonAvatarKey="";
+            return;
+        }
         if(requestCode==PICK_FLOORPLAN && resultCode==RESULT_OK && data!=null){
             Uri chosen=data.getData();
             if(chosen!=null){
@@ -540,9 +558,8 @@ public final class MainActivity extends Activity {
         noticePanel.addView(label("ESTADO DA CASA",13,WHITE,true));
         add(noticePanel,label("●   XIAOZHI MCP    ·    " + mcpStatus(),
             12,mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),12);
-        add(noticePanel,label("●   TV DA SALA    ·    " +
-            (savedIp().isEmpty()?"Por configurar":"Ligação por verificar"),
-            12,savedIp().isEmpty()?GOLD:CYAN,false),8);
+        add(noticePanel,label("●   DISPOSITIVOS    ·    "+DeviceRegistry.all(this).size()
+            +" adicionados",12,CYAN,false),8);
         add(noticePanel,label("●   " + android.os.Build.MODEL + "    ·    " + battery() + "% de bateria",
             12,GREEN,false),8);
         add(noticePanel,label("Equipamentos: abre os cartões para controlar.",12,MUTED,false),10);
@@ -557,20 +574,23 @@ public final class MainActivity extends Activity {
         heading.addView(button("Ver todos",false,()->{page="Dispositivos";draw();}));
         add(stage,heading,17);
 
-        GridLayout grid=new GridLayout(this);
-        int cols=landscape()?5:2;
-        grid.setColumnCount(cols);
-        String[] favorites={"tv","camera_sala","camera","spotify"};
-        int index=0;
-        for(String key:favorites) {
-            for(HomeDevices.Device device:HomeDevices.ALL) {
-                if(key.equals(device.key)) {
-                    addHomeTile(grid,device,index++,cols);
-                    break;
-                }
-            }
+        java.util.List<DeviceRegistry.Device> savedDevices=DeviceRegistry.all(this);
+        java.util.List<DeviceRegistry.Device> favorites=new java.util.ArrayList<>();
+        for(DeviceRegistry.Device d:savedDevices)if(d.favorite)favorites.add(d);
+        if(favorites.isEmpty()){
+            LinearLayout empty=panel();
+            add(empty,label(savedDevices.isEmpty()?
+                "Ainda não adicionaste equipamentos.":"Ainda não escolheste favoritos.",
+                14,MUTED,false),5);
+            add(empty,button("Adicionar dispositivo",true,this::addDeviceMenu),10);
+            add(stage,empty,12);
+        }else{
+            GridLayout grid=new GridLayout(this);
+            int cols=landscape()?5:2;grid.setColumnCount(cols);
+            for(int i=0;i<favorites.size();i++)
+                addDeviceTile(grid,favorites.get(i),i,cols);
+            add(stage,grid,11);
         }
-        add(stage,grid,11);
 
         LinearLayout quick=horizontal();
         addWeighted(quick,visualShortcut("Pessoas da casa","Telemóveis e família",
@@ -586,8 +606,10 @@ public final class MainActivity extends Activity {
             13,serviceRunning()?CYAN:GOLD,true),9);
         add(control,button("Configurar ligação MCP do XiaoZhi",true,this::mcpSettings),10);
         if(!serviceRunning()) add(control,button("Ativar central LUMI",false,this::switchService),8);
-        add(control,button("Testar TV da sala",false,()->{
-            activeDevice="tv";page="Dispositivos";draw();
+        add(control,button(DeviceRegistry.hasLg(this)?
+            "Abrir TV LG":"Adicionar TV LG",false,()->{
+                DeviceRegistry.Device tv=DeviceRegistry.byId(this,"lg-tv");
+                if(tv==null)showAddLg("");else openRegistered(tv);
         }),8);
         add(stage,control,15);
         if(HomeAssistantClient.isConfigured(this)){
@@ -977,6 +999,37 @@ public final class MainActivity extends Activity {
             +" · Bateria: "+battery()+"% · "+serviceText());
     }
 
+    private void choosePersonAvatar(String key){
+        pendingPersonAvatarKey=key;
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent,PICK_PERSON_AVATAR);
+    }
+
+    private void addPersonHeading(LinearLayout card,String name,String key){
+        LinearLayout row=horizontal();
+        String image=getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("person_avatar_"+key,"");
+        if(!image.isEmpty()){
+            ImageView avatar=new ImageView(this);
+            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            try{avatar.setImageURI(Uri.parse(image));}
+            catch(Exception ignored){}
+            row.addView(avatar,new LinearLayout.LayoutParams(dp(58),dp(58)));
+        }else{
+            HomeIconView avatar=new HomeIconView(this,"people",CYAN);
+            row.addView(avatar,new LinearLayout.LayoutParams(dp(58),dp(58)));
+        }
+        LinearLayout info=vertical();info.addView(label(name,20,WHITE,true));
+        add(info,label("Foto escolhida por ti · localização externa",12,MUTED,false),5);
+        addWeighted(row,info,1,11);
+        add(card,row,2);
+        add(card,button("Escolher fotografia / avatar",false,()->choosePersonAvatar(key)),9);
+    }
+
     private void drawPeople() {
         heading("Pessoas da casa","Telemóveis e localização voluntária.");
         LinearLayout intro=panel();
@@ -991,8 +1044,7 @@ public final class MainActivity extends Activity {
             SharedPreferences prefs=getSharedPreferences("hub",MODE_PRIVATE);
             String name=prefs.getString("person_name_"+i,defaults[i]);
             LinearLayout card=panel();
-            card.addView(label("●  "+name,20,WHITE,true));
-            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            addPersonHeading(card,name,"default_"+index);
             add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
             add(card,button("Editar nome",false,()->{
                 EditText edit=new EditText(this);
@@ -1019,8 +1071,7 @@ public final class MainActivity extends Activity {
             String name=others.optString(i,"");
             if(name.isEmpty())continue;
             LinearLayout card=panel();
-            card.addView(label("●  "+name,20,WHITE,true));
-            add(card,label("Telemóvel · localização externa",13,MUTED,false),6);
+            addPersonHeading(card,name,"extra_"+name);
             add(card,button("Localizar pelo Google",false,()->openFindHub(name)),9);
             add(card,button("Remover pessoa",false,()->new AlertDialog.Builder(this)
                 .setTitle("Remover "+name+" do HUB?")
@@ -1077,17 +1128,22 @@ public final class MainActivity extends Activity {
             catch(Exception error){notice("Planta da casa","Imagem inacessível.");}
             add(panel,imageView,8);
         }
+        java.util.List<DeviceRegistry.Device> registered=DeviceRegistry.all(this);
+        if(!registered.isEmpty()){
+            add(panel,label("Dispositivos por divisão",16,WHITE,true),10);
+            for(String room:DeviceRegistry.ROOMS){
+                for(DeviceRegistry.Device device:registered){
+                    if(!room.equals(device.room))continue;
+                    add(panel,button(room+" · "+device.name,false,()->openRegistered(device)),7);
+                }
+            }
+        } else add(panel,label("Adiciona dispositivos para os organizares por divisão.",
+            13,MUTED,false),8);
         if(HomeAssistantClient.isConfigured(this)){
-            add(panel,label("Controlos por divisão · associados por ti no Home Assistant",
-                13,MUTED,false),10);
+            add(panel,label("Integração Home Assistant (opcional)",14,WHITE,true),10);
             appendHaSnapshot(panel,true,30);
-        }else{
-            add(panel,label("Para controlar equipamentos por divisão, "
-                +"liga primeiro o Home Assistant e associa cada equipamento "
-                +"à divisão correta. Não são criadas localizações fictícias.",
-                13,MUTED,false),9);
-            add(panel,button("Configurar Home Assistant",false,this::openHomeAssistant),10);
         }
+
         add(panel,button(image.isEmpty()?"Escolher imagem da planta":
             "Substituir planta",true,this::selectFloorplan),13);
         add(stage,panel,12);
@@ -1204,27 +1260,263 @@ public final class MainActivity extends Activity {
     }
 
     private void drawDevices() {
-        heading("Dispositivos","Equipamentos com ações reais ou aplicações instaladas.");
-        drawSelectedDevice();
-
-        sectionTitle("A MINHA CASA","Os mesmos equipamentos que encontras na Home.");
-        GridLayout grid=new GridLayout(this);
-        int cols=landscape()?5:2;
-        grid.setColumnCount(cols);
-        int index=0;
-        for(HomeDevices.Device item:HomeDevices.ALL){
-            if(!("tv".equals(item.key)||"camera".equals(item.key)
-                ||"camera_sala".equals(item.key)||"spotify".equals(item.key)))continue;
-            addHomeTile(grid,item,index++,cols);
+        heading("Dispositivos","Aparecem apenas os equipamentos que adicionares.");
+        LinearLayout actions=panel();
+        add(actions,button("+ Adicionar dispositivo",true,this::addDeviceMenu),3);
+        add(actions,label("Procurar na rede, configurar LG ou ligar um serviço compatível.",
+            13,MUTED,false),11);
+        add(stage,actions,12);
+        java.util.List<DeviceRegistry.Device> saved=DeviceRegistry.all(this);
+        if(saved.isEmpty()){
+            LinearLayout empty=panel();
+            add(empty,label("A tua casa começa aqui",20,WHITE,true),3);
+            add(empty,label("Ainda não existem dispositivos adicionados. "
+                +"Não mostramos TVs, aspiradores ou câmaras fictícios.",
+                14,MUTED,false),9);
+            add(empty,button("Procurar equipamentos Wi-Fi",true,this::scanDevices),12);
+            add(stage,empty,14);
+        } else {
+            sectionTitle("EQUIPAMENTOS ADICIONADOS",saved.size()+" registo(s) locais · estado por verificar");
+            for(DeviceRegistry.Device d:saved){
+                LinearLayout card=panel();
+                LinearLayout row=horizontal();
+                HomeIconView icon=new HomeIconView(this,d.icon(),CYAN);
+                row.addView(icon,new LinearLayout.LayoutParams(dp(55),dp(55)));
+                LinearLayout texts=vertical();
+                texts.addView(label(d.name,18,WHITE,true));
+                add(texts,label(d.room+" · "+d.description(),12,MUTED,false),5);
+                addWeighted(row,texts,1,12);
+                add(card,row,3);
+                if(d.controlsTv()){
+                    add(card,button("Abrir controlos LG",true,()->openRegistered(d)),12);
+                }else{
+                    add(card,label("Detetado anteriormente em "+d.host+
+                        ". A descoberta não permite controlar sem integração da marca.",
+                        12,GOLD,false),10);
+                }
+                LinearLayout controls=horizontal();
+                addWeighted(controls,button("Editar / divisão",false,()->editRegistered(d)),1,0);
+                addWeighted(controls,button("Remover",false,()->removeRegistered(d)),1,9);
+                add(card,controls,8);
+                add(stage,card,10);
+            }
         }
-        add(stage,grid,11);
         if(HomeAssistantClient.isConfigured(this)){
-            LinearLayout real=panel();
-            real.addView(label("Equipamentos reais do Home Assistant",18,WHITE,true));
-            add(real,button("Ver todos e controlar",true,this::openHomeAssistant),8);
-            appendHaSnapshot(real,false,12);
-            add(stage,real,15);
+            LinearLayout ha=panel();
+            ha.addView(label("Home Assistant · integração opcional",16,WHITE,true));
+            add(ha,button("Consultar entidades reais",false,this::openHomeAssistant),9);
+            appendHaSnapshot(ha,false,12);
+            add(stage,ha,12);
         }
+        add(stage,button("Adicionar outro dispositivo",false,this::addDeviceMenu),12);
+    }
+
+    private void addDeviceTile(GridLayout grid,DeviceRegistry.Device device,int index,int columns){
+        LinearLayout tile=vertical();tile.setGravity(Gravity.CENTER);
+        tile.setPadding(dp(7),dp(12),dp(7),dp(11));
+        GradientDrawable background=new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,HubThemes.tileGradient(themeId,index));
+        background.setCornerRadius(dp(12));
+        background.setStroke(dp(1),currentPalette.tileBorder);
+        tile.setBackground(background);
+        HomeIconView icon=new HomeIconView(this,device.icon(),currentPalette.tileIcon);
+        tile.addView(icon,new LinearLayout.LayoutParams(dp(45),dp(45)));
+        TextView name=label(device.name,14,currentPalette.tileText,true);
+        name.setGravity(Gravity.CENTER);name.setMaxLines(2);add(tile,name,6);
+        TextView sub=label(device.room,11,currentPalette.tileText,false);
+        sub.setGravity(Gravity.CENTER);add(tile,sub,3);
+        tile.setOnClickListener(v->openRegistered(device));
+        GridLayout.LayoutParams params=new GridLayout.LayoutParams();
+        params.width=0;params.height=dp(128);
+        params.columnSpec=GridLayout.spec(index%columns,1f);
+        params.rowSpec=GridLayout.spec(index/columns,1f);
+        params.setMargins(dp(4),dp(4),dp(4),dp(4));
+        grid.addView(tile,params);
+    }
+
+    private void openRegistered(DeviceRegistry.Device device){
+        if(device.controlsTv()){
+            activeDevice="tv";page="Dispositivos";draw();
+            tvDetails();
+        }else{
+            notice(device.name,"Equipamento detetado, mas ainda não existe um "
+                +"conector de controlo para esta marca. IP descoberto: "+device.host);
+        }
+    }
+
+    private void addDeviceMenu(){
+        new AlertDialog.Builder(this).setTitle("Adicionar dispositivo")
+            .setItems(new String[]{
+                "Procurar equipamentos na rede Wi-Fi",
+                "Adicionar / configurar TV LG webOS",
+                "Ligar aplicação ou serviço",
+                "Adicionar equipamento pelo IP (sem controlo)"
+            },(dialog,which)->{
+                if(which==0)scanDevices();
+                else if(which==1)showAddLg("");
+                else if(which==2)showConnectors();
+                else showManualDiscovery();
+            }).show();
+    }
+
+    private Spinner roomSpinner(String selected){
+        Spinner spinner=new Spinner(this);
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,
+            android.R.layout.simple_spinner_dropdown_item,DeviceRegistry.ROOMS);
+        spinner.setAdapter(adapter);
+        for(int i=0;i<DeviceRegistry.ROOMS.length;i++)
+            if(DeviceRegistry.ROOMS[i].equals(selected))spinner.setSelection(i);
+        return spinner;
+    }
+
+    private void showAddLg(String discoveredIp){
+        DeviceRegistry.Device existing=DeviceRegistry.byId(this,"lg-tv");
+        LinearLayout form=vertical();form.setPadding(dp(18),dp(4),dp(18),dp(6));
+        EditText name=new EditText(this);name.setSingleLine(true);
+        name.setHint("Nome (por ex. TV da sala)");
+        name.setText(existing==null?"TV da Sala":existing.name);
+        form.addView(name);
+        Spinner room=roomSpinner(existing==null?"Sala":existing.room);
+        add(form,room,9);
+        EditText ip=new EditText(this);ip.setSingleLine(true);
+        ip.setHint("IP da TV na rede local");
+        ip.setText(discoveredIp.isEmpty()?
+            (existing==null?savedIp():existing.host):discoveredIp);
+        add(form,ip,8);
+        EditText mac=new EditText(this);mac.setSingleLine(true);
+        mac.setHint("MAC opcional, necessário para ligar com Wake-on-LAN");
+        mac.setText(existing==null?getSharedPreferences("hub",MODE_PRIVATE)
+            .getString("tv_mac",""):existing.mac);
+        add(form,mac,8);
+        add(form,label("O emparelhamento webOS será feito depois de adicionar. "
+            +"Wake-on-LAN só funciona se a LG aceitar ligar pela rede.",
+            12,MUTED,false),8);
+        new AlertDialog.Builder(this).setTitle("Adicionar TV LG")
+            .setView(form).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar TV",(d,w)->{
+                try{
+                    DeviceRegistry.registerLg(this,name.getText().toString(),
+                        room.getSelectedItem().toString(),ip.getText().toString(),
+                        mac.getText().toString());
+                    page="Dispositivos";draw();
+                    notice("TV adicionada","Abre os controlos e escolhe Emparelhar.");
+                }catch(Exception ex){notice("TV não adicionada",ex.getMessage());}
+            }).show();
+    }
+
+    private void showManualDiscovery(){
+        LinearLayout form=vertical();form.setPadding(dp(18),dp(4),dp(18),dp(4));
+        EditText name=new EditText(this);name.setSingleLine(true);
+        name.setHint("Nome do equipamento");form.addView(name);
+        EditText ip=new EditText(this);ip.setSingleLine(true);
+        ip.setHint("IPv4 local (ex.: 192.168.1.50)");add(form,ip,9);
+        add(form,label("Regista a existência do equipamento, mas não ativa "
+            +"comandos sem um protocolo de controlo compatível.",
+            12,MUTED,false),9);
+        new AlertDialog.Builder(this).setTitle("Adicionar pelo IP")
+            .setView(form).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Adicionar",(d,w)->{
+                try{
+                    if(name.getText().toString().trim().isEmpty())throw new IllegalArgumentException("Introduz um nome.");
+                    DeviceRegistry.addDiscovered(this,name.getText().toString(),
+                        ip.getText().toString(),"other");
+                    page="Dispositivos";draw();
+                }catch(Exception e){notice("Não adicionado",e.getMessage());}
+            }).show();
+    }
+
+    private void scanDevices(){
+        LinearLayout layout=vertical();layout.setPadding(dp(16),dp(4),dp(16),dp(4));
+        TextView status=label("A procurar dispositivos na rede local…",13,MUTED,false);
+        layout.addView(status);
+        LinearLayout results=vertical();
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(results);
+        add(layout,scroll,8);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("Pesquisa Wi-Fi · SSDP e mDNS")
+            .setView(layout).setNegativeButton("Fechar",null).create();
+        dialog.show();
+        new DeviceDiscovery(this).start(new DeviceDiscovery.Listener(){
+            int count=0;
+            @Override public void found(DeviceDiscovery.Candidate candidate){
+                if(isFinishing()||!dialog.isShowing())return;
+                count++;
+                LinearLayout card=vertical();
+                add(card,label(candidate.name+" · "+candidate.ip,14,WHITE,true),6);
+                add(card,label(candidate.origin+" · descoberta, sem emparelhamento",
+                    12,MUTED,false),3);
+                add(card,button("Adicionar",false,()->{
+                    if("tv".equals(candidate.kind)){
+                        dialog.dismiss();showAddLg(candidate.ip);return;
+                    }
+                    try{
+                        DeviceRegistry.addDiscovered(MainActivity.this,
+                            candidate.name,candidate.ip,candidate.kind);
+                        dialog.dismiss();page="Dispositivos";draw();
+                    }catch(Exception e){notice("Não adicionado",e.getMessage());}
+                }),5);
+                add(results,card,11);
+            }
+            @Override public void complete(String message){
+                if(dialog.isShowing())status.setText(message+" Encontrados: "+count);
+            }
+        });
+    }
+
+    private void showConnectors(){
+        new AlertDialog.Builder(this).setTitle("Ligar aplicação ou serviço")
+            .setMessage("Apenas a ligação LG direta e a integração Home Assistant "
+                +"estão atualmente implementadas. Abrir outra aplicação não importa "
+                +"automaticamente os seus dispositivos.")
+            .setItems(new String[]{
+                "LG webOS · configurar diretamente",
+                "Home Assistant · integração funcional, se tiver servidor",
+                "Google Home · abrir app (importação não disponível)",
+                "SmartThings · abrir app (importação não disponível)",
+                "Smart Life / Tuya · abrir app (importação não disponível)"
+            },(d,index)->{
+                switch(index){
+                    case 0: showAddLg("");break;
+                    case 1: openHomeAssistant();break;
+                    case 2: openAppOrWeb("com.google.android.apps.chromecast.app",
+                        "https://play.google.com/store/apps/details?id=com.google.android.apps.chromecast.app");break;
+                    case 3: openAppOrWeb("com.samsung.android.oneconnect",
+                        "https://play.google.com/store/apps/details?id=com.samsung.android.oneconnect");break;
+                    case 4: openAppOrWeb("com.tuya.smartlife",
+                        "https://play.google.com/store/apps/details?id=com.tuya.smartlife");break;
+                }
+            }).show();
+    }
+
+    private void editRegistered(DeviceRegistry.Device original){
+        LinearLayout form=vertical();form.setPadding(dp(18),dp(3),dp(18),dp(5));
+        EditText name=new EditText(this);name.setSingleLine(true);name.setText(original.name);
+        form.addView(name);
+        Spinner room=roomSpinner(original.room);add(form,room,8);
+        android.widget.CheckBox favorite=new android.widget.CheckBox(this);
+        favorite.setText("Mostrar nos favoritos da Casa");
+        favorite.setChecked(original.favorite);add(form,favorite,8);
+        new AlertDialog.Builder(this).setTitle("Editar "+original.name)
+            .setView(form).setNegativeButton("Cancelar",null)
+            .setPositiveButton("Guardar",(d,w)->{
+                try{
+                    DeviceRegistry.update(this,original.id,name.getText().toString(),
+                        room.getSelectedItem().toString(),favorite.isChecked());
+                    draw();
+                }catch(Exception e){notice("Não guardado",e.getMessage());}
+            }).show();
+    }
+
+    private void removeRegistered(DeviceRegistry.Device device){
+        new AlertDialog.Builder(this).setTitle("Remover "+device.name+"?")
+            .setMessage("Remove apenas o registo do HUB. Não elimina o dispositivo "
+                +"da rede, da conta do fabricante nem do Home Assistant.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Remover",(d,w)->{
+                DeviceRegistry.remove(this,device.id);
+                page="Dispositivos";draw();
+            }).show();
     }
 
     private void drawSelectedDevice() {
@@ -1468,6 +1760,11 @@ public final class MainActivity extends Activity {
                     edit.remove("lg_client_key").remove("lg_cert_pin").remove("lg_last_status");
                 }
                 edit.apply();
+                DeviceRegistry.Device linked=DeviceRegistry.byId(this,"lg-tv");
+                if(linked!=null){
+                    try{DeviceRegistry.registerLg(this,linked.name,linked.room,ipVal,macVal);}
+                    catch(Exception e){notice("TV","Falha ao atualizar registo: "+e.getMessage());}
+                }
                 draw();
             }).show();
     }

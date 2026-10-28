@@ -118,7 +118,7 @@ public final class XiaozhiMcpBridge {
                                 .put("protocolVersion", "2024-11-05")
                                 .put("capabilities", new JSONObject().put("tools", new JSONObject()))
                                 .put("serverInfo", new JSONObject()
-                                    .put("name", "LUMI-Hub").put("version", "0.14.0"));
+                                    .put("name", "LUMI-Hub").put("version", "0.15.0"));
                             reply(this, id, result);
                         } else if ("ping".equals(method)) {
                             reply(this, id, new JSONObject());
@@ -159,15 +159,19 @@ public final class XiaozhiMcpBridge {
         }
     }
 
-    private static JSONArray tools() throws Exception {
+    private JSONArray tools() throws Exception {
         JSONArray list = new JSONArray();
-        list.put(tool("home.tv_desligar", "Desliga a TV da Sala por webOS."));
+        if(DeviceRegistry.hasLg(context)) {
+        list.put(tool("home.tv_desligar", "Desliga a TV LG adicionada ao HUB por webOS."));
         list.put(tool("home.tv_ligar", "Liga a TV da Sala por Wake-on-LAN, quando configurado."));
         list.put(tool("home.tv_volume_mais", "Aumenta o volume da TV da Sala."));
         list.put(tool("home.tv_volume_menos", "Reduz o volume da TV da Sala."));
         list.put(tool("home.tv_silenciar", "Silencia a TV da Sala."));
         list.put(tool("home.tv_youtube", "Abre o YouTube na TV da Sala."));
-        list.put(tool("home.tv_estado", "Consulta o ultimo diagnostico conhecido da TV da Sala, nao o estado em tempo real."));
+        list.put(tool("home.tv_estado", "Consulta o último diagnóstico conhecido da TV LG; não confirma estado atual."));
+        }
+        list.put(deviceListTool());
+        list.put(deviceControlTool());
         list.put(tool("home.hub_estado", "Consulta o estado da central LUMI Hub e bateria do tablet."));
         list.put(memoryTool("lumi.memoria_guardar",
             "Guarda recordacoes apenas quando a pessoa pedir explicitamente que a LUMI se lembre de algo.",true));
@@ -184,6 +188,22 @@ public final class XiaozhiMcpBridge {
                 .put("type", "object")
                 .put("properties", new JSONObject())
                 .put("additionalProperties", false));
+    }
+
+    private static JSONObject deviceListTool() throws Exception {
+        return tool("home.dispositivos_listar","Lista apenas equipamentos adicionados pelo utilizador, com divisões e comandos suportados.");
+    }
+    private static JSONObject deviceControlTool() throws Exception {
+        JSONObject props=new JSONObject()
+            .put("id",new JSONObject().put("type","string"))
+            .put("acao",new JSONObject().put("type","string")
+                .put("enum",new JSONArray().put("ligar").put("desligar").put("volume_mais")
+                    .put("volume_menos").put("silenciar").put("youtube")));
+        return new JSONObject().put("name","home.dispositivo_acao")
+            .put("description","Executa comandos permitidos num equipamento do catálogo. Só LG webOS tem controlo nativo. Não afirmar sucesso sem confirmação.")
+            .put("inputSchema",new JSONObject().put("type","object")
+                .put("properties",props).put("required",new JSONArray().put("id").put("acao"))
+                .put("additionalProperties",false));
     }
 
     private static JSONObject memoryTool(String name,String description,boolean save) throws Exception {
@@ -224,6 +244,44 @@ public final class XiaozhiMcpBridge {
     }
 
     private void execute(WebSocketClient ws, Object id, String tool, JSONObject args) {
+        if("home.dispositivos_listar".equals(tool)){
+            JSONArray devices=new JSONArray();
+            for(DeviceRegistry.Device d:DeviceRegistry.all(context)){
+                try{devices.put(new JSONObject().put("id",d.id).put("nome",d.name)
+                    .put("divisao",d.room).put("tipo",d.kind)
+                    .put("comandos",d.controlsTv()?
+                        "ligar,desligar,volume_mais,volume_menos,silenciar,youtube":
+                        "nenhum - ainda sem integração"));}
+                catch(Exception ignored){}
+            }
+            result(ws,id,devices.length()==0?"Não existem dispositivos adicionados ao HUB.":devices.toString(),false);
+            return;
+        }
+        if("home.dispositivo_acao".equals(tool)){
+            String deviceId=args==null?"":args.optString("id","");
+            String acao=args==null?"":args.optString("acao","");
+            DeviceRegistry.Device device=DeviceRegistry.byId(context,deviceId);
+            if(device==null||!device.controlsTv()){
+                result(ws,id,"Dispositivo não configurado com controlo suportado.",true);
+                return;
+            }
+            String mapped;
+            switch(acao){
+                case "ligar":mapped="home.tv_ligar";break;
+                case "desligar":mapped="home.tv_desligar";break;
+                case "volume_mais":mapped="home.tv_volume_mais";break;
+                case "volume_menos":mapped="home.tv_volume_menos";break;
+                case "silenciar":mapped="home.tv_silenciar";break;
+                case "youtube":mapped="home.tv_youtube";break;
+                default:result(ws,id,"Ação não autorizada.",true);return;
+            }
+            execute(ws,id,mapped,new JSONObject());
+            return;
+        }
+        if(tool.startsWith("home.tv_") && !DeviceRegistry.hasLg(context)){
+            result(ws,id,"Adiciona primeiro a TV LG na aba Dispositivos.",true);
+            return;
+        }
         if("lumi.memoria_guardar".equals(tool)){
             String title=args==null?"":args.optString("titulo","").trim();
             String detail=args==null?"":args.optString("detalhe","").trim();

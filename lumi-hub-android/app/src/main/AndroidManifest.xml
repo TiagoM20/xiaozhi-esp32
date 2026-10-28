@@ -4,10 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <queries>
         <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.apps.chromecast.app" />
+        <package android:name="com.samsung.android.oneconnect" />
+        <package android:name="com.tuya.smartlife" />
         <package android:name="com.mm.android.smartlifeiot" />
     </queries>
     <application

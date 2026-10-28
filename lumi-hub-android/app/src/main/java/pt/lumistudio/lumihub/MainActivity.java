@@ -69,6 +69,7 @@ public final class MainActivity extends Activity {
     private final String[] navItems = {"Casa", "Dispositivos", "Lumi"};
     private String page = "Casa";
     private String activeDevice = "tv";
+    private String selectedRegisteredDeviceId="";
     private LinearLayout stage;
     private TextView tvFeedback;
     private HubThemes.Palette currentPalette=HubThemes.get(0);
@@ -1261,6 +1262,7 @@ public final class MainActivity extends Activity {
 
     private void drawDevices() {
         heading("Dispositivos","Aparecem apenas os equipamentos que adicionares.");
+        if("lg-tv".equals(selectedRegisteredDeviceId) && DeviceRegistry.hasLg(this))tvDetails();
         LinearLayout actions=panel();
         add(actions,button("+ Adicionar dispositivo",true,this::addDeviceMenu),3);
         add(actions,label("Procurar na rede, configurar LG ou ligar um serviço compatível.",
@@ -1336,8 +1338,8 @@ public final class MainActivity extends Activity {
 
     private void openRegistered(DeviceRegistry.Device device){
         if(device.controlsTv()){
-            activeDevice="tv";page="Dispositivos";draw();
-            tvDetails();
+            activeDevice="tv";selectedRegisteredDeviceId="lg-tv";
+            page="Dispositivos";draw();
         }else{
             notice(device.name,"Equipamento detetado, mas ainda não existe um "
                 +"conector de controlo para esta marca. IP descoberto: "+device.host);
@@ -1398,6 +1400,7 @@ public final class MainActivity extends Activity {
                     DeviceRegistry.registerLg(this,name.getText().toString(),
                         room.getSelectedItem().toString(),ip.getText().toString(),
                         mac.getText().toString());
+                    selectedRegisteredDeviceId="lg-tv";
                     page="Dispositivos";draw();
                     notice("TV adicionada","Abre os controlos e escolhe Emparelhar.");
                 }catch(Exception ex){notice("TV não adicionada",ex.getMessage());}
@@ -1515,6 +1518,7 @@ public final class MainActivity extends Activity {
             .setNegativeButton("Cancelar",null)
             .setPositiveButton("Remover",(d,w)->{
                 DeviceRegistry.remove(this,device.id);
+                if(device.id.equals(selectedRegisteredDeviceId))selectedRegisteredDeviceId="";
                 page="Dispositivos";draw();
             }).show();
     }

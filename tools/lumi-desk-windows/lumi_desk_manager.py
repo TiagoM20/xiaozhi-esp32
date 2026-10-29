@@ -205,7 +205,7 @@ class LumiManager:
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
         tk.Label(top, text="Windows opcional  •  Backup integral  •  Atualização V14 experimental  •  Recuperação",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
-        tk.Label(top, text="ATENÇÃO: "OLÁ LUMI" MULTINET EN EXPERIMENTAL · NÃO É WAKENET PT-PT",
+        tk.Label(top, text="ATENÇÃO: OLÁ LUMI (MULTINET EN EXPERIMENTAL) NÃO É WAKENET PT-PT",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
 
         conn = tk.Frame(master, bg="#18253A")

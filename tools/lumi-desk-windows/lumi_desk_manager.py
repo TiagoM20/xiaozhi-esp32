@@ -26,8 +26,31 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-# Backup e recuperação apenas. Firmware "Lumi" desativado até modelo validado.
-FIRMWARE_INSTALL_ENABLED = False
+# A DESK V14 é experimental; a instalação é uma opção explícita com backup validado.
+FIRMWARE_INSTALL_ENABLED = True
+VERSION = "0.6.0"
+FW_NAME = "LUMI-DESK-V14-APP-ONLY-0x20000.bin"
+FW_SHA256 = "7332e4f7060ac221fa4bd4f667f1d62a463a1b4c142f9f03d82ed3406431bc08"
+
+
+def firmware_path():
+    """Apenas o binario original e fixado por SHA-256, incluido no EXE."""
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / FW_NAME
+
+
+def check_fw():
+    fw = firmware_path()
+    if not fw.is_file():
+        raise ValueError("Firmware DESK V14 nao incorporado neste CORE.")
+    data = fw.read_bytes()
+    if not 1000000 < len(data) <= APP_LENGTH:
+        raise ValueError("Tamanho da aplicacao V14 inesperado.")
+    if hashlib.sha256(data).hexdigest() != FW_SHA256:
+        raise ValueError("Hash SHA-256 nao corresponde ao firmware V14 publicado.")
+    check_app(data,"2.5.1")
+    return fw
+
+
 
 
 def check_app(data, want=None):
@@ -168,7 +191,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI CORE | Manutenção DESK 0.5.0")
+        self.master.title("LUMI CORE | DESK V14 experimental · 0.6.0")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -180,9 +203,9 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="Windows opcional  •  Backup e recuperação seguros  •  Sem instalar firmware de testes",
+        tk.Label(top, text="Windows opcional  •  Backup integral  •  Atualização V14 experimental  •  Recuperação",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
-        tk.Label(top, text="UMA CÓPIA · UM CLIQUE  |  FIRMWARE LUMI AGUARDA MODELO",
+        tk.Label(top, text="ATENÇÃO: "OLÁ LUMI" MULTINET EN EXPERIMENTAL · NÃO É WAKENET PT-PT",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
 
         conn = tk.Frame(master, bg="#18253A")
@@ -204,10 +227,9 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  FAZER BACKUP COMPLETO (1 CLIQUE)", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR FIRMWARE LUMI (AINDA INDISPONÍVEL)", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR DESK V14 EXPERIMENTAL (BACKUP AUTOMÁTICO)", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
-        self.install_btn.configure(state="disabled")
         self.restore_btn = self.op_button(operations, "3  RECUPERAR UMA CÓPIA (CONFIRMAÇÃO)", "#365274",
                                           self.do_restore)
         self.restore_btn.pack(fill="x", pady=4)
@@ -230,7 +252,8 @@ class LumiManager:
                  font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=25, pady=(0, 16))
 
         self.refresh_ports()
-        self.say("Instalação de firmware bloqueada até existir modelo nativo pt-PT Lumi.")
+        self.say("Firmware DESK V14 experimental incorporado. Instalação opcional com backup e confirmação.")
+        self.say("A palavra de ativação Olá Lumi usa MultiNet inglês; a fiabilidade pt-PT não está validada.")
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
         self.say("Os backups ficam em Documentos\\LUMI-DESK\\Backups e contêm dados privados.")
         self.master.after(100, self.drain)
@@ -290,7 +313,7 @@ class LumiManager:
     def lock_buttons(self, working):
         for button in (self.backup_btn, self.install_btn, self.restore_btn,
                        self.refresh_btn, self.test_btn, self.inspect_btn):
-            button.configure(state="disabled" if (working or button is self.install_btn) else "normal")
+            button.configure(state="disabled" if working else "normal")
 
     def start(self, action, arg=None):
         if self.working:
@@ -474,11 +497,23 @@ class LumiManager:
         self.verify_readback(app,offset)
         self.say("Recuperação completa verificada: app + assets.")
 
+    def restore_app_from_backup(self, source, report):
+        """Rollback only the previously active OTA app, leaving NVS and assets untouched."""
+        source=Path(source)
+        data=source.read_bytes()
+        offset=int(report["offset_ativo"],16)
+        app=source.parent / "app-original-para-recuperacao.bin"
+        app.write_bytes(data[offset:offset+APP_LENGTH])
+        self.say("A repor aplicação anterior na partição "+hex(offset))
+        self.esp("--after","no-reset","write-flash",hex(offset),app)
+        self.verify_readback(app,offset)
+        self.say("Aplicação anterior recuperada. NVS/OTA/assets intactos.")
+
     def worker(self, action, port, arg):
         self.current_port = port
         try:
-            if action not in ("test", "backup", "restore"):
-                raise ValueError("Instalação bloqueada: o modelo Lumi ainda não está validado.")
+            if action not in ("test", "backup", "install", "restore"):
+                raise ValueError("Operacao nao autorizada.")
             self.say("\n--- " + action.upper() + " | " + port + " ---")
             self.esp("flash-id")
             mac = self.mac()
@@ -490,6 +525,47 @@ class LumiManager:
                 self.events.put(("ok", "Cópia integral de 16 MB verificada.\n\n"
                                  + str(folder)
                                  + "\n\nNão foi feita qualquer gravação na DESK."))
+            elif action == "install":
+                firmware=check_fw()
+                self.say("Firmware V14 incorporado, SHA-256 e descricao ESP-IDF validados.")
+                folder, source, report = self.acquire_backup(mac)
+                self.last_backup = str(source)
+                slot=int(report["offset_ativo"],16)
+                self.say("Gravacao APENAS da app em "+report["ota_ativo"]+
+                         " ("+report["offset_ativo"]+"); sem alteracoes em NVS/OTA/assets.")
+                if not self.choose("LUMI DESK V14 · Firmware EXPERIMENTAL",
+                    "BACKUP INTEGRAL DE 16 MB CONCLUÍDO E VERIFICADO.\n\n"
+                    "Versão atual: "+report["versao_atual"]+"\n"
+                    "Partição ativa: "+report["ota_ativo"]+" ("+report["offset_ativo"]+")\n\n"
+                    "NOVO FIRMWARE V14: XiaoZhi 2.5.1 + melhorias de expressão e bloqueio "
+                    "de TTS espontâneo. Wake word 'Olá Lumi' usa MultiNet INGLÊS, "
+                    "NÃO é um modelo português treinado e pode reconhecer pior.\n\n"
+                    "Apenas a aplicação será gravada na partição ativa. "
+                    "Wi-Fi, credenciais, assets, GIFs e OTA serão preservados.\n"
+                    "Backup privado: "+str(folder)+"\n\n"
+                    "CONFIRMAS a atualização experimental?"):
+                    self.say("Instalação cancelada. Backup completo disponível em "+str(folder))
+                    self.events.put(("ok","Backup completo guardado. Nenhuma gravacao efetuada."))
+                else:
+                    self.verify_ota_unchanged(source)
+                    if self.mac()!=mac:
+                        raise ValueError("A placa USB mudou durante o backup. Gravacao bloqueada.")
+                    self.say("A gravar apenas a aplicação V14: "+hex(slot))
+                    try:
+                        self.esp("--after","no-reset","write-flash",hex(slot),firmware)
+                        self.verify_readback(firmware,slot)
+                    except Exception as e:
+                        self.say("FALHA V14: "+str(e)+"; a tentar recuperar a app original.")
+                        try:
+                            self.restore_app_from_backup(source,report)
+                        except Exception as rollback:
+                            raise RuntimeError("RECUPERACAO NAO CONFIRMADA: "+str(rollback)+
+                                ". NAO desligar USB; copia: "+str(source))
+                        raise RuntimeError("V14 falhou; aplicacao anterior reposta e verificada.")
+                    self.events.put(("ok","Firmware V14 experimental instalado e verificado byte a byte.\n"
+                        "Reinicia a DESK. Testa o áudio, wake, expressões e Wi-Fi.\n"
+                        "Se houver falhas usa o botão RECUPERAR UMA CÓPIA.\n"
+                        "Guarda o backup privado em "+str(folder)))
             elif action == "restore":
                 original = Path(arg)
                 if original.name != "flash-integral-16MB.bin":
@@ -530,9 +606,7 @@ class LumiManager:
         self.start("backup")
 
     def do_install(self):
-        messagebox.showinfo("Firmware Lumi pendente",
-            "A instalação estará disponível quando o modelo português Lumi "
-            "estiver treinado e validado. Este gestor não contém firmware de testes.")
+        self.start("install")
 
     def do_restore(self):
         file = filedialog.askopenfilename(
@@ -559,8 +633,11 @@ if __name__ == "__main__":
         import esptool
         from serial.tools import list_ports
         output = {
-            "mode": "maintenance-only",
-            "firmware_install_locked": not FIRMWARE_INSTALL_ENABLED,
+            "mode": "backup-v14-experimental-restore",
+            "version": VERSION,
+            "firmware_hash_ok": bool(check_fw()),
+            "candidate_app_version": check_app(check_fw().read_bytes(), "2.5.1"),
+            "firmware_install_enabled": FIRMWARE_INSTALL_ENABLED,
             "esptool_loaded": bool(esptool),
             "serial_loaded": bool(list_ports),
             "tkinter_loaded": bool(tk),

@@ -1,0 +1,142 @@
+name: LUMI CORE V0.6 - DESK V14 experimental USB
+
+on:
+  push:
+    branches: [feature/lumi-core-v06-desk-v14-20261029]
+    paths:
+      - 'tools/lumi-desk-windows/**'
+      - '.github/workflows/lumi-core-desk-v14-windows-060.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lumi-core-desk-v14-060
+  cancel-in-progress: true
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout do codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12 na maquina de compilacao
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Instalar apenas dependencias de compilacao
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0 esptool==5.6.0 pyserial pillow
+
+      - name: Obter firmware DESK V14 original da release verificada
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download lumi-desk-v14-experimental --repo TiagoM20/xiaozhi-esp32 --pattern "LUMI-DESK-V14-APP-ONLY-0x20000.bin" --dir tools/lumi-desk-windows --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel obter o firmware oficial" }
+
+      - name: Verificar SHA-256, firmware e testes offline
+        shell: pwsh
+        run: |
+          python -m py_compile tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m py_compile tools/lumi-desk-windows/native_assets.py
+          python -m unittest discover -s tools/lumi-desk-windows -p 'test_*.py' -v
+          @'
+          import sys
+          sys.path.insert(0,"tools/lumi-desk-windows")
+          import lumi_desk_manager as m
+          fw=m.check_fw()
+          assert fw.stat().st_size==2797408
+          assert m.APP_OFFSETS==(0x20000,0x410000)
+          assert m.FIRMWARE_INSTALL_ENABLED
+          assert m.check_app(fw.read_bytes(),"2.5.1")=="2.5.1"
+          print("SHA256 V14 fixado, app ESP-IDF 2.5.1, slots OTA: OK")
+          '@ | Set-Content -Encoding UTF8 verify_v14.py
+          python verify_v14.py
+
+      - name: Icone LUMI
+        shell: pwsh
+        run: |
+          @'
+          from PIL import Image, ImageDraw
+          im=Image.new("RGBA",(256,256),"white")
+          d=ImageDraw.Draw(im)
+          blue="#0668E7"; gold="#FFC107"
+          d.rounded_rectangle((7,7,249,249),radius=52,fill="white",outline="#E0E9F5",width=5)
+          d.line([(44,126),(128,55),(212,126)],fill=blue,width=17,joint="curve")
+          d.line([(60,128),(60,200),(196,200),(196,128)],fill=blue,width=17,joint="curve")
+          d.rounded_rectangle((94,130,112,158),radius=9,fill=blue)
+          d.rounded_rectangle((144,130,162,158),radius=9,fill=blue)
+          d.arc((106,152,155,190),start=10,end=170,fill=blue,width=9)
+          d.rounded_rectangle((176,68,193,116),radius=5,fill=blue)
+          d.arc((176,23,234,78),start=213,end=331,fill=gold,width=8)
+          d.arc((187,37,223,72),start=218,end=320,fill=gold,width=7)
+          d.ellipse((198,63,208,73),fill=gold)
+          im.save('tools/lumi-desk-windows/LUMI-DESK.ico',sizes=[(256,256),(64,64),(48,48),(32,32),(16,16)])
+          '@ | Set-Content -Encoding UTF8 make_icon.py
+          python make_icon.py
+
+      - name: Compilar CORE autonomo com firmware no mesmo EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-CORE-DESK-V14-v0.6.0 --icon tools/lumi-desk-windows/LUMI-DESK.ico --paths tools/lumi-desk-windows --add-data "tools/lumi-desk-windows/LUMI-DESK-V14-APP-ONLY-0x20000.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha no PyInstaller" }
+          if (!(Test-Path dist/LUMI-CORE-DESK-V14-v0.6.0.exe)) { throw "EXE em falta" }
+
+      - name: Testar o EXE real no Windows sem acesso ao ESP32
+        shell: pwsh
+        run: |
+          $exe=(Resolve-Path "dist/LUMI-CORE-DESK-V14-v0.6.0.exe").Path
+          $testFile=Join-Path $PWD "self-test-v06.json"
+          $process=Start-Process -FilePath $exe -ArgumentList "--self-test", $testFile -PassThru
+          if (-not $process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw "Timeout self-test EXE" }
+          if ($process.ExitCode -ne 0) { throw "EXE self-test falhou" }
+          if (!(Test-Path $testFile)) { throw "EXE nao produziu relatorio" }
+          $check=Get-Content $testFile -Raw | ConvertFrom-Json
+          if (!$check.firmware_hash_ok -or !$check.firmware_install_enabled -or !$check.esptool_loaded -or !$check.serial_loaded -or $check.candidate_app_version -ne "2.5.1" -or $check.version -ne "0.6.0") { throw "O EXE nao contem ferramentas e firmware V14 validos" }
+          Get-Content $testFile
+
+      - name: Hash do EXE para verificacao local
+        shell: pwsh
+        run: |
+          $exe="dist/LUMI-CORE-DESK-V14-v0.6.0.exe"
+          $hash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-CORE-DESK-V14-v0.6.0.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-CORE-V06.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-CORE-DESK-V14-v0.6.0
+          path: |
+            dist/LUMI-CORE-DESK-V14-v0.6.0.exe
+            dist/SHA256-LUMI-CORE-V06.txt
+          retention-days: 21
+
+      - name: Publicar EXE para descarregar
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-core-desk-v14-windows-v0.6.0
+          target_commitish: feature/lumi-core-v06-desk-v14-20261029
+          name: LUMI CORE DESK v0.6.0 - Firmware V14 experimental incluido
+          prerelease: true
+          make_latest: false
+          body: |
+            LUMI CORE v0.6.0, unico EXE Windows x64, com firmware DESK V14 experimental incorporado.
+            Nao precisa de Python, esptool nem de ficheiros BIN separados.
+            O botao INSTALAR faz SEMPRE backup integral dos 16MB, valida MAC, tabela,
+            OTA e assets, exige confirmacao e so grava a aplicacao no slot OTA ativo.
+            App V14 2.5.1, SHA256 fixado 7332e4f7060ac221fa4bd4f667f1d62a463a1b4c142f9f03d82ed3406431bc08.
+            Nao apaga flash nem modifica NVS, OTA ou GIFs. Verifica bytes gravados.
+            Em erro tenta repor app do backup. Recuperacao explicita app+assets disponivel.
+            ATENCAO: 'Ola Lumi' utiliza MultiNet ingles e NAO e WakeNet PT-PT.
+            Reconhecimento e hardware real nao testados; versao experimental.
+            Executavel sem assinatura Authenticode. Nao desativar SmartScreen ou antivirus.
+          files: |
+            dist/LUMI-CORE-DESK-V14-v0.6.0.exe
+            dist/SHA256-LUMI-CORE-V06.txt

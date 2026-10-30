@@ -1,0 +1,145 @@
+name: LUMI CORE v0.7 - Pausas Longas Experimental Windows EXE
+on:
+  push:
+    branches: [feature/lumi-core-v07-pausas-20261030]
+    paths:
+      - 'tools/lumi-desk-windows/**'
+      - '.github/workflows/lumi-core-pausas-070.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: lumi-core-pausas-v07
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.12 para compilar (nao exigido ao utilizador)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Instalar ferramentas no runner Windows
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0 esptool==5.6.0 pyserial pillow
+
+      - name: Obter firmware ESP32 real do CI aprovado
+        uses: actions/download-artifact@v4
+        with:
+          name: LUMI-DESK-PAUSAS-LONGAS-TESTE-NAO-INSTALAR
+          run-id: 41057578681
+          repository: TiagoM20/xiaozhi-esp32
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: tools/lumi-desk-windows
+
+      - name: Validar prototipo e testes existentes
+        shell: pwsh
+        run: |
+          python -m py_compile tools/lumi-desk-windows/lumi_desk_manager.py
+          python -m py_compile tools/lumi-desk-windows/native_assets.py
+          python -m unittest discover -s tools/lumi-desk-windows -p "test_*.py" -v
+          @'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,"tools/lumi-desk-windows")
+          import lumi_desk_manager as m
+          f=m.check_fw()
+          assert f.stat().st_size==0x2ab2f0, f.stat().st_size
+          assert m.FW_SHA256=="475548614441af772dd2c1cb6610f852e2759df8aa7e10d404d7589ada7169b1"
+          assert m.check_app(f.read_bytes(),"2.5.1")=="2.5.1"
+          assert m.FIRMWARE_INSTALL_ENABLED and m.VERSION=="0.7.0"
+          assert m.APP_OFFSETS==(0x20000,0x410000)
+          print("PROTOTIPO APPROVED: ",m.FW_SHA256)
+          '@ | Set-Content -Encoding UTF8 verify_fw.py
+          python verify_fw.py
+
+      - name: Criar icone LUMI
+        shell: pwsh
+        run: |
+          @'
+          from PIL import Image, ImageDraw
+          im=Image.new("RGBA",(256,256),"white")
+          d=ImageDraw.Draw(im)
+          blue="#0668E7"; gold="#FFC107"
+          d.rounded_rectangle((7,7,249,249),radius=52,fill="white",outline="#E0E9F5",width=5)
+          d.line([(44,126),(128,55),(212,126)],fill=blue,width=17,joint="curve")
+          d.line([(60,128),(60,200),(196,200),(196,128)],fill=blue,width=17,joint="curve")
+          d.rounded_rectangle((94,130,112,158),radius=9,fill=blue)
+          d.rounded_rectangle((144,130,162,158),radius=9,fill=blue)
+          d.arc((106,152,155,190),start=10,end=170,fill=blue,width=9)
+          d.rounded_rectangle((176,68,193,116),radius=5,fill=blue)
+          d.arc((176,23,234,78),start=213,end=331,fill=gold,width=8)
+          d.arc((187,37,223,72),start=218,end=320,fill=gold,width=7)
+          d.ellipse((198,63,208,73),fill=gold)
+          im.save('tools/lumi-desk-windows/LUMI-DESK.ico',sizes=[(256,256),(64,64),(48,48),(32,32),(16,16)])
+          '@ | Set-Content -Encoding UTF8 make_icon.py
+          python make_icon.py
+
+      - name: Compilar EXE autonomo com firmware incorporado
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --name LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0 --icon tools/lumi-desk-windows/LUMI-DESK.ico --paths tools/lumi-desk-windows --add-data "tools/lumi-desk-windows/LUMI-DESK-PAUSAS-LONGAS-PROTOTIPO-APP.bin;." --collect-all esptool --collect-submodules serial --hidden-import serial.tools.list_ports tools/lumi-desk-windows/lumi_desk_manager.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha PyInstaller" }
+          if (!(Test-Path dist/LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe)) { throw "Exe em falta" }
+
+      - name: Executar self-test real do EXE no Windows
+        shell: pwsh
+        run: |
+          $exe=(Resolve-Path "dist/LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe").Path
+          $test=Join-Path $PWD "self-test-070.json"
+          $proc=Start-Process -FilePath $exe -ArgumentList "--self-test", $test -PassThru
+          if (-not $proc.WaitForExit(120000)) { Stop-Process -Id $proc.Id -Force; throw "Timeout self-test" }
+          if ($proc.ExitCode -ne 0) { throw "Self-test falhou" }
+          if (!(Test-Path $test)) { throw "Relatorio em falta" }
+          $j=Get-Content $test -Raw | ConvertFrom-Json
+          if (!$j.firmware_hash_ok -or !$j.firmware_install_enabled -or !$j.esptool_loaded -or !$j.serial_loaded -or $j.candidate_app_version -ne "2.5.1" -or $j.version -ne "0.7.0" -or $j.mode -ne "backup-long-pauses-experimental-restore") { throw "EXE ou firmware incorreto" }
+          Get-Content $test
+
+      - name: Criar hash SHA256
+        shell: pwsh
+        run: |
+          $file="dist/LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe"
+          $hash=(Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          "$hash  LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe" | Out-File -Encoding ascii dist/SHA256-LUMI-CORE-070.txt
+          Write-Host "SHA256: $hash"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-CORE-PAUSAS-070-WINDOWS-TESTE
+          path: |
+            dist/LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe
+            dist/SHA256-LUMI-CORE-070.txt
+          retention-days: 21
+
+      - name: Publicar pre-release experimental (nao substitui 0.6)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-core-pausas-longas-windows-v0.7.0
+          target_commitish: feature/lumi-core-v07-pausas-20261030
+          name: LUMI CORE 0.7.0 - Pausas longas (TESTE, nao estavel)
+          prerelease: true
+          make_latest: false
+          body: |
+            Unico EXE Windows 64-bit, com firmware DESK de pausas longas experimental incorporado.
+            Backup automatico 16MB, validacao de MAC, particoes, OTA, versao e assets antes de gravar.
+            Confirmacao explicita do utilizador; grava apenas a aplicacao no slot OTA ativo.
+            Sem erase-flash, sem escrever OTA/NVS/GIFs. Verificacao readback e tentativa de rollback.
+            O firmware foi compilado ESP-IDF 6.1 em CI (run 41057578681).
+            Modo pausas longas desligado por defeito; dois cliques VOL+ no idle para alternar.
+            Usa o XiaoZhi online, modo manual e VAD local de 1800ms. No botao POWER, pode forcar fim de fala.
+            NAO foi testado fisicamente nem se confirmou compatibilidade do modo manual no servidor hospedado.
+            A voz Raquel, DeepSeek e wake word actual nao foram modificados.
+            EXE nao assinado, nao desativar protecoes Windows. Fazer backup e testar com prudencia.
+          files: |
+            dist/LUMI-CORE-PAUSAS-EXPERIMENTAL-v0.7.0.exe
+            dist/SHA256-LUMI-CORE-070.txt

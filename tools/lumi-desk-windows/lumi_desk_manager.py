@@ -26,11 +26,11 @@ OTA_DATA_OFFSET = 0xD000
 OTA_DATA_LENGTH = 0x2000
 ASSETS_OFFSET = 0x800000
 ASSETS_LENGTH = 0x800000
-# A DESK V14 é experimental; a instalação é uma opção explícita com backup validado.
+# Prototipo de pausas longas: manual mode XiaoZhi online, VAD ESP32; instalacao opt-in.
 FIRMWARE_INSTALL_ENABLED = True
-VERSION = "0.6.0"
-FW_NAME = "LUMI-DESK-V14-APP-ONLY-0x20000.bin"
-FW_SHA256 = "7332e4f7060ac221fa4bd4f667f1d62a463a1b4c142f9f03d82ed3406431bc08"
+VERSION = "0.7.0"
+FW_NAME = "LUMI-DESK-PAUSAS-LONGAS-PROTOTIPO-APP.bin"
+FW_SHA256 = "475548614441af772dd2c1cb6610f852e2759df8aa7e10d404d7589ada7169b1"
 
 
 def firmware_path():
@@ -41,12 +41,12 @@ def firmware_path():
 def check_fw():
     fw = firmware_path()
     if not fw.is_file():
-        raise ValueError("Firmware DESK V14 nao incorporado neste CORE.")
+        raise ValueError("Firmware de pausas longas nao incorporado neste CORE.")
     data = fw.read_bytes()
     if not 1000000 < len(data) <= APP_LENGTH:
-        raise ValueError("Tamanho da aplicacao V14 inesperado.")
+        raise ValueError("Tamanho da aplicacao de teste inesperado.")
     if hashlib.sha256(data).hexdigest() != FW_SHA256:
-        raise ValueError("Hash SHA-256 nao corresponde ao firmware V14 publicado.")
+        raise ValueError("Hash SHA-256 nao corresponde ao prototipo aprovado no CI.")
     check_app(data,"2.5.1")
     return fw
 
@@ -191,7 +191,7 @@ def esp_child(args):
 class LumiManager:
     def __init__(self, master):
         self.master = master
-        self.master.title("LUMI CORE | DESK V14 experimental · 0.6.0")
+        self.master.title("LUMI CORE | Pausas longas - 0.7.0")
         self.master.geometry("820x690")
         self.master.minsize(660, 580)
         self.master.configure(bg="#0C1321")
@@ -203,9 +203,9 @@ class LumiManager:
         top.pack(fill="x", padx=24, pady=(19, 10))
         tk.Label(top, text="⌂  LUMI DESK", bg="#0C1321", fg="#FFFFFF",
                  font=("Segoe UI Semibold", 23)).pack(anchor="w")
-        tk.Label(top, text="Windows opcional  •  Backup integral  •  Atualização V14 experimental  •  Recuperação",
+        tk.Label(top, text="Windows opcional  •  Backup integral  •  Pausas longas experimental  •  Recuperação",
                  bg="#0C1321", fg="#B8C8DE", font=("Segoe UI", 10)).pack(anchor="w", pady=3)
-        tk.Label(top, text="ATENÇÃO: OLÁ LUMI (MULTINET EN EXPERIMENTAL) NÃO É WAKENET PT-PT",
+        tk.Label(top, text="EXPERIMENTAL: VAD LOCAL 1,8S + XIAOZHI ONLINE  |  VOZ/WAKE SEM MUDANÇAS",
                  bg="#0C1321", fg="#FFC107", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(10, 0))
 
         conn = tk.Frame(master, bg="#18253A")
@@ -227,7 +227,7 @@ class LumiManager:
         self.backup_btn = self.op_button(operations, "1  FAZER BACKUP COMPLETO (1 CLIQUE)", "#0668E7",
                                          self.do_backup)
         self.backup_btn.pack(fill="x", pady=4)
-        self.install_btn = self.op_button(operations, "2  INSTALAR DESK V14 EXPERIMENTAL (BACKUP AUTOMÁTICO)", "#365274",
+        self.install_btn = self.op_button(operations, "2  INSTALAR PAUSAS LONGAS (EXPERIMENTAL)", "#365274",
                                           self.do_install)
         self.install_btn.pack(fill="x", pady=4)
         self.restore_btn = self.op_button(operations, "3  RECUPERAR UMA CÓPIA (CONFIRMAÇÃO)", "#365274",
@@ -252,7 +252,7 @@ class LumiManager:
                  font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=25, pady=(0, 16))
 
         self.refresh_ports()
-        self.say("Firmware DESK V14 experimental incorporado. Instalação opcional com backup e confirmação.")
+        self.say("Prototipo de pausas longas incluido. Instalação opcional com backup e confirmação.")
         self.say("A palavra de ativação Olá Lumi usa MultiNet inglês; a fiabilidade pt-PT não está validada.")
         self.say("Sem esptool externo e sem Python instalado: ambas as ferramentas estão incluídas.")
         self.say("Os backups ficam em Documentos\\LUMI-DESK\\Backups e contêm dados privados.")
@@ -527,19 +527,22 @@ class LumiManager:
                                  + "\n\nNão foi feita qualquer gravação na DESK."))
             elif action == "install":
                 firmware=check_fw()
-                self.say("Firmware V14 incorporado, SHA-256 e descricao ESP-IDF validados.")
+                self.say("Pausas longas: binario SHA-256 e descricao ESP-IDF validados.")
                 folder, source, report = self.acquire_backup(mac)
                 self.last_backup = str(source)
                 slot=int(report["offset_ativo"],16)
                 self.say("Gravacao APENAS da app em "+report["ota_ativo"]+
                          " ("+report["offset_ativo"]+"); sem alteracoes em NVS/OTA/assets.")
-                if not self.choose("LUMI DESK V14 · Firmware EXPERIMENTAL",
+                if not self.choose("LUMI DESK · PAUSAS LONGAS (EXPERIMENTAL)",
                     "BACKUP INTEGRAL DE 16 MB CONCLUÍDO E VERIFICADO.\n\n"
                     "Versão atual: "+report["versao_atual"]+"\n"
                     "Partição ativa: "+report["ota_ativo"]+" ("+report["offset_ativo"]+")\n\n"
-                    "NOVO FIRMWARE V14: XiaoZhi 2.5.1 + melhorias de expressão e bloqueio "
-                    "de TTS espontâneo. Wake word 'Olá Lumi' usa MultiNet INGLÊS, "
-                    "NÃO é um modelo português treinado e pode reconhecer pior.\n\n"
+                    "PROTOTIPO DE PAUSAS LONGAS: XiaoZhi online e voz Raquel mantidos. "
+                    "Dois cliques em VOLUME + com a DESK em repouso ativam/desativam "
+                    "o modo experimental (DESLIGADO por defeito). "
+                    "Usa escuta manual e VAD local de 1,8 segundos para enviar fim de frase. "
+                    "Ainda NAO foi testado na DESK fisica nem com o XiaoZhi online. "
+                    "A wake word atual continua inalterada.\n\n"
                     "Apenas a aplicação será gravada na partição ativa. "
                     "Wi-Fi, credenciais, assets, GIFs e OTA serão preservados.\n"
                     "Backup privado: "+str(folder)+"\n\n"
@@ -550,20 +553,20 @@ class LumiManager:
                     self.verify_ota_unchanged(source)
                     if self.mac()!=mac:
                         raise ValueError("A placa USB mudou durante o backup. Gravacao bloqueada.")
-                    self.say("A gravar apenas a aplicação V14: "+hex(slot))
+                    self.say("A gravar apenas a aplicacao do prototipo: "+hex(slot))
                     try:
                         self.esp("--after","no-reset","write-flash",hex(slot),firmware)
                         self.verify_readback(firmware,slot)
                     except Exception as e:
-                        self.say("FALHA V14: "+str(e)+"; a tentar recuperar a app original.")
+                        self.say("Falha no prototipo: "+str(e)+"; a tentar recuperar a app original.")
                         try:
                             self.restore_app_from_backup(source,report)
                         except Exception as rollback:
                             raise RuntimeError("RECUPERACAO NAO CONFIRMADA: "+str(rollback)+
                                 ". NAO desligar USB; copia: "+str(source))
-                        raise RuntimeError("V14 falhou; aplicacao anterior reposta e verificada.")
-                    self.events.put(("ok","Firmware V14 experimental instalado e verificado byte a byte.\n"
-                        "Reinicia a DESK. Testa o áudio, wake, expressões e Wi-Fi.\n"
+                        raise RuntimeError("Prototipo falhou; aplicacao anterior reposta e verificada.")
+                    self.events.put(("ok","Prototipo pausas longas instalado e verificado byte a byte.\n"
+                        "Reinicia a DESK. Dois cliques em VOL+ no repouso para testar pausas.\n"
                         "Se houver falhas usa o botão RECUPERAR UMA CÓPIA.\n"
                         "Guarda o backup privado em "+str(folder)))
             elif action == "restore":
@@ -633,7 +636,7 @@ if __name__ == "__main__":
         import esptool
         from serial.tools import list_ports
         output = {
-            "mode": "backup-v14-experimental-restore",
+            "mode": "backup-long-pauses-experimental-restore",
             "version": VERSION,
             "firmware_hash_ok": bool(check_fw()),
             "candidate_app_version": check_app(check_fw().read_bytes(), "2.5.1"),

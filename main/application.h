@@ -96,6 +96,11 @@ public:
      */
     void ToggleChatState();
 
+    // Experimental opt-in: defer cloud endpointing to the local VAD and
+    // explicit manual-stop protocol. Disabled by default, not persisted.
+    void ToggleExtendedPauseMode();
+    bool IsExtendedPauseMode() const { return extended_pause_mode_; }
+
     /**
      * Start listening (event-based, thread-safe)
      * Sends MAIN_EVENT_START_LISTENING to be handled in Run()
@@ -151,6 +156,10 @@ private:
     bool assets_version_checked_ = false;
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
+    bool extended_pause_mode_ = false;  // OFF by default; experiment only
+    bool extended_pause_heard_speech_ = false;
+    bool extended_pause_awaiting_answer_ = false;
+    int64_t extended_pause_silence_since_us_ = 0;
     int64_t listening_silence_since_us_ = 0;  // Only count actual silence while listening
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;

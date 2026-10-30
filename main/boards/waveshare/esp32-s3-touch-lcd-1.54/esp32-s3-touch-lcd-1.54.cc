@@ -246,6 +246,12 @@ private:
             GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
         });
 
+        // Double-click VOL+ when idle: temporary 1.8s pause guard using
+        // XiaoZhi manual listening; ordinary short/long volume buttons unchanged.
+        volume_up_button_.OnDoubleClick([this]() {
+            Application::GetInstance().ToggleExtendedPauseMode();
+        });
+
         volume_down_button_.OnClick([this]() {
             auto codec = Board::GetInstance().GetAudioCodec();
             auto volume = codec->output_volume() - 10;

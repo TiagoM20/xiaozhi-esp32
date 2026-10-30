@@ -261,6 +261,20 @@ void Application::Run() {
                 // A new 15s window begins when speech ends.
                 listening_silence_since_us_ = audio_service_.IsVoiceDetected()
                     ? 0 : esp_timer_get_time();
+                // Manual listen on the hosted XiaoZhi service is intended to
+                // keep recording until an explicit stop. The local AFE VAD
+                // determines when to send that stop, not the server threshold.
+                if (extended_pause_mode_ &&
+                    listening_mode_ == kListeningModeManualStop &&
+                    !extended_pause_awaiting_answer_) {
+                    if (audio_service_.IsVoiceDetected()) {
+                        extended_pause_heard_speech_ = true;
+                        extended_pause_silence_since_us_ = 0;
+                    } else if (extended_pause_heard_speech_ &&
+                               extended_pause_silence_since_us_ == 0) {
+                        extended_pause_silence_since_us_ = esp_timer_get_time();
+                    }
+                }
                 auto led = Board::GetInstance().GetLed();
                 led->OnStateChanged();
             }
@@ -278,11 +292,33 @@ void Application::Run() {
         if (bits & MAIN_EVENT_CLOCK_TICK) {
             clock_ticks_++;
 
+            // EXPERIMENTAL: with the hosted XiaoZhi backend still in use, send
+            // explicit manual-stop only after at least 1.8 seconds of local
+            // AFE-observed silence. The one-second clock introduces up to 1s
+            // of extra latency; no server-side VAD parameter is changed.
+            if (extended_pause_mode_ && GetDeviceState() == kDeviceStateListening &&
+                listening_mode_ == kListeningModeManualStop &&
+                extended_pause_heard_speech_ && !extended_pause_awaiting_answer_ &&
+                !pending_listening_start_ && audio_service_.IsAudioProcessorRunning() &&
+                !audio_service_.IsVoiceDetected() &&
+                extended_pause_silence_since_us_ != 0 &&
+                esp_timer_get_time() - extended_pause_silence_since_us_ >= 1800000) {
+                ESP_LOGI(TAG, "LUMI: user paused >=1800ms; sending explicit listen stop");
+                extended_pause_awaiting_answer_ = true;
+                extended_pause_heard_speech_ = false;
+                extended_pause_silence_since_us_ = 0;
+                if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                    protocol_->SendStopListening();
+                }
+                audio_service_.EnableVoiceProcessing(false);
+            }
+
             // LUMI: after 15 seconds without speech, end the conversation.
             // Never count while output is pending or microphone processing
             // has not started yet (e.g., while TTS playback is draining).
             if (GetDeviceState() == kDeviceStateListening &&
-                listening_mode_ == kListeningModeAutoStop &&
+                (listening_mode_ == kListeningModeAutoStop ||
+                 (extended_pause_mode_ && listening_mode_ == kListeningModeManualStop)) &&
                 !pending_listening_start_ &&
                 audio_service_.IsAudioProcessorRunning() &&
                 audio_service_.IsPlaybackIdle()) {
@@ -679,7 +715,8 @@ void Application::InitializeProtocol() {
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
                     if (GetDeviceState() == kDeviceStateSpeaking) {
-                        if (listening_mode_ == kListeningModeManualStop) {
+                        if (listening_mode_ == kListeningModeManualStop &&
+                            !extended_pause_mode_) {
                             SetDeviceState(kDeviceStateIdle);
                         } else {
                             SetDeviceState(kDeviceStateListening);
@@ -824,6 +861,22 @@ void Application::DismissAlert() {
 
 void Application::ToggleChatState() { xEventGroupSetBits(event_group_, MAIN_EVENT_TOGGLE_CHAT); }
 
+void Application::ToggleExtendedPauseMode() {
+    // Run UI and listening-mode changes in the application task.
+    Schedule([this]() {
+        if (GetDeviceState() != kDeviceStateIdle) {
+            Board::GetInstance().GetDisplay()->ShowNotification(
+                "Pausas longas: termina a conversa antes de alterar");
+            return;
+        }
+        extended_pause_mode_ = !extended_pause_mode_;
+        ESP_LOGI(TAG, "LUMI pause guard experimental %s",
+                 extended_pause_mode_ ? "ON" : "OFF");
+        Board::GetInstance().GetDisplay()->ShowNotification(
+            extended_pause_mode_ ? "Pausas longas: ATIVADAS" : "Pausas longas: DESATIVADAS");
+    });
+}
+
 void Application::StartListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING); }
 
 void Application::StopListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING); }
@@ -866,7 +919,17 @@ void Application::HandleToggleChatEvent() {
     } else if (state == kDeviceStateSpeaking) {
         AbortSpeaking(kAbortReasonNone);
     } else if (state == kDeviceStateListening) {
-        protocol_->CloseAudioChannel();
+        if (extended_pause_mode_ && listening_mode_ == kListeningModeManualStop &&
+            !extended_pause_awaiting_answer_) {
+            // User can force completion by clicking POWER once, in case the
+            // local VAD fails to observe speech/silence on this hardware.
+            ESP_LOGI(TAG, "LUMI: user manually finished long-pause utterance");
+            extended_pause_awaiting_answer_ = true;
+            audio_service_.EnableVoiceProcessing(false);
+            protocol_->SendStopListening();
+        } else {
+            protocol_->CloseAudioChannel();
+        }
     }
 }
 
@@ -1039,6 +1102,9 @@ void Application::HandleStateChangedEvent() {
     // Any state change invalidates a pending deferred listening start;
     // the Listening case below re-arms it when needed.
     pending_listening_start_ = false;
+    extended_pause_heard_speech_ = false;
+    extended_pause_awaiting_answer_ = false;
+    extended_pause_silence_since_us_ = 0;
 
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
@@ -1075,7 +1141,8 @@ void Application::HandleStateChangedEvent() {
                 // voice processing. This prevents audio truncation when STOP arrives
                 // late due to network jitter. Instead of blocking the main loop here,
                 // defer the start until MAIN_EVENT_PLAYBACK_DRAINED arrives.
-                if (listening_mode_ == kListeningModeAutoStop && !audio_service_.IsPlaybackIdle()) {
+                if ((listening_mode_ == kListeningModeAutoStop || extended_pause_mode_) &&
+                    !audio_service_.IsPlaybackIdle()) {
                     pending_listening_start_ = true;
                 } else {
                     StartListeningAudio();
@@ -1225,6 +1292,8 @@ void Application::SetListeningMode(ListeningMode mode) {
 }
 
 ListeningMode Application::GetDefaultListeningMode() const {
+    // Opt-in only; keep the stable cloud auto/realtime paths unchanged.
+    if (extended_pause_mode_) return kListeningModeManualStop;
     return aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime;
 }
 

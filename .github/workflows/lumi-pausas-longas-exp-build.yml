@@ -1,0 +1,101 @@
+name: LUMI DESK - Pausas longas PROTOTIPO (compile-only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-pausas-longas-ptpt-exp-20261030]
+    paths:
+      - 'main/application.cc'
+      - 'main/application.h'
+      - 'main/boards/waveshare/esp32-s3-touch-lcd-1.54/**'
+      - '.github/workflows/lumi-pausas-longas-exp-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lumi-pause-prototype-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate opt-in implementation and target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('main/application.cc').read_text()
+          h = Path('main/application.h').read_text()
+          b = Path('main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc').read_text()
+          assert 'bool extended_pause_mode_ = false;' in h
+          assert 'ToggleExtendedPauseMode()' in p and 'ToggleExtendedPauseMode()' in b
+          assert 'SendStopListening()' in p and '1800000' in p
+          assert 'kListeningModeManualStop' in p
+          assert 'LUMI: 15s silence, closing conversation' in p
+          assert 'LUMI V14: ignored unsolicited TTS in idle' in p
+          print('Prototype opt-in, default OFF, 15s idle preserved')
+          PY
+      - name: Configure existing Waveshare V14 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          c=json.loads(p.read_text())
+          overrides={
+            "CONFIG_USE_DEVICE_AEC":"n",
+            "CONFIG_USE_SERVER_AEC":"n",
+            "CONFIG_WAKE_WORD_DISABLED":"n",
+            "CONFIG_USE_ESP_WAKE_WORD":"n",
+            "CONFIG_USE_AFE_WAKE_WORD":"n",
+            "CONFIG_USE_CUSTOM_WAKE_WORD":"y",
+            "CONFIG_CUSTOM_WAKE_WORD":'"ola lumi"',
+            "CONFIG_CUSTOM_WAKE_WORD_DISPLAY":'"Olá Lumi"',
+            "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD":"55",
+            "CONFIG_SEND_WAKE_WORD_DATA":"n",
+            "CONFIG_SR_MN_CN_NONE":"y",
+            "CONFIG_SR_MN_EN_MULTINET6_QUANT":"y"
+          }
+          items=c["builds"][0]["sdkconfig_append"]
+          c["builds"][0]["sdkconfig_append"]=[x for x in items if x.split("=",1)[0] not in overrides]+[f"{k}={v}" for k,v in overrides.items()]
+          p.write_text(json.dumps(c,ensure_ascii=False,indent=2)+"\n")
+          PY
+      - name: Compile experimental DESK firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          grep -qx 'CONFIG_USE_AUDIO_PROCESSOR=y' sdkconfig
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          test -s build/xiaozhi.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          f=Path('build/xiaozhi.bin')
+          assert 1_000_000 < f.stat().st_size <= 0x3F0000
+          out=Path('output'); out.mkdir(exist_ok=True)
+          name='LUMI-DESK-PAUSAS-LONGAS-PROTOTIPO-APP.bin'
+          (out/name).write_bytes(f.read_bytes())
+          (out/'sha256.txt').write_text(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+name+'\n')
+          (out/'NAO-INSTALAR-SEM-TESTE.txt').write_text(
+            'PROTOTIPO NAO TESTADO COM XIAOZHI.ME NEM DESK FISICA.\n'
+            'Opção experimental OFF por defeito; VOL+ duplo clique alterna modo.\n'
+            'APP-ONLY, NUNCA ERASE FLASH. Backup integral obrigatorio.\n'
+            'Nao instalar como firmware estavel.\n')
+          print('App compile OK; source SHA256:',hashlib.sha256(f.read_bytes()).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-DESK-PAUSAS-LONGAS-TESTE-NAO-INSTALAR
+          path: output/*
+          retention-days: 14

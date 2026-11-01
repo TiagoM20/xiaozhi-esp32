@@ -12,66 +12,96 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Configuração MCP isolada, não confundir com a ligação de áudio local. */
+/** Configuracao MCP do XiaoZhi online. Token guardado somente no Android Keystore. */
 public final class McpSettingsActivity extends Activity {
     private SharedPreferences prefs;
     private TextView info;
-    private TextView text(String s,int size){
-        TextView v=new TextView(this);v.setText(s);v.setTextSize(size);
-        v.setTextColor(Color.WHITE);v.setPadding(8,10,8,10);return v;
+    private TextView stored;
+    private TextView text(String value,int size) {
+        TextView v=new TextView(this);
+        v.setText(value);v.setTextSize(size);v.setTextColor(Color.WHITE);
+        v.setPadding(8,10,8,10);return v;
     }
-    private void action(LinearLayout parent,String title,Runnable callback){
+    private void action(LinearLayout parent,String title,Runnable callback) {
         Button b=new Button(this);b.setAllCaps(false);b.setText(title);
         parent.addView(b);b.setOnClickListener(v->callback.run());
     }
-    private void restartService(){
-        Intent service=new Intent(this,HubService.class);
-        boolean running=prefs.getBoolean("service_running",false);
-        if(running){
-            stopService(service);
-            try{
-                if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
-                else startService(service);
-            }catch(Exception e){info.setText("Não foi possível reiniciar o serviço.");}
+    private void updateStatus() {
+        info.setText("MCP: "+prefs.getString("mcp_state","Por configurar"));
+        stored.setText(XiaozhiMcpBridge.hasEndpoint(this)
+            ? "Credencial MCP guardada no tablet (o token nao e apresentado)."
+            : "Sem ligacao MCP guardada.");
+    }
+    private boolean refreshBridge() {
+        try {
+            Intent service=new Intent(this,HubService.class);
+            service.setAction(HubService.ACTION_REFRESH_MCP);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
+            else startService(service);
+            return true;
+        }catch(Exception ex) {
+            info.setText("Nao foi possivel iniciar o HUB; verifica as permissoes do Android.");
+            return false;
         }
     }
-    @Override public void onCreate(Bundle saved){
+    @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         prefs=getSharedPreferences("hub",MODE_PRIVATE);
         LinearLayout root=new LinearLayout(this);root.setOrientation(1);
         root.setPadding(20,20,20,28);root.setBackgroundColor(0xff122033);
         android.widget.ScrollView scroll=new android.widget.ScrollView(this);
         scroll.addView(root);setContentView(scroll);
-        root.addView(text("LUMI · Integração MCP",23));
-        root.addView(text("O MCP permite ao agente XiaoZhi aceder às ferramentas " +
-            "autorizadas, como memórias e comandos da casa. Não configura a voz Raquel.",14));
-        info=text("Estado: "+prefs.getString("mcp_state","Por configurar"),14);root.addView(info);
+        root.addView(text("LUMI · Ligacao MCP ao XiaoZhi",23));
+        root.addView(text("O MCP disponibiliza ao agente XiaoZhi as ferramentas autorizadas do HUB. Nao altera a voz nem o firmware da DESK.",14));
+        info=text("",14);root.addView(info);
+        stored=text("",13);root.addView(stored);
         EditText endpoint=new EditText(this);endpoint.setSingleLine(true);
         endpoint.setTextColor(Color.WHITE);endpoint.setHintTextColor(0xffabb4c5);
-        endpoint.setHint("Colar novo endereço MCP privado");
-        endpoint.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        endpoint.setHint("Colar endereco MCP privado do agente");
+        endpoint.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         root.addView(endpoint);
-        root.addView(text(prefs.getString("mcp_endpoint","").isEmpty()?
-            "Sem endereço guardado.":"Existe um endereço guardado; não é apresentado por segurança.",13));
-        action(root,"Guardar ligação MCP",()->{
+        action(root,"Guardar e ligar ao XiaoZhi",()->{
             String url=endpoint.getText().toString().trim();
-            if(!XiaozhiMcpBridge.validEndpoint(url)){
-                info.setText("Endereço inválido. Usa o endereço MCP do teu agente.");return;
+            if(!XiaozhiMcpBridge.validEndpoint(url)) {
+                info.setText("URL invalido: usa wss://api.xiaozhi.me/mcp/?token=...");return;
             }
-            prefs.edit().putString("mcp_endpoint",url)
-                .putString("mcp_state","A iniciar ligação").apply();
-            endpoint.setText("");restartService();info.setText("Ligação guardada.");
-            DeskLog.event(this,"MCP","Definição de ligação MCP atualizada");
+            try {
+                // Guardar cifrado antes de remover possivel valor legado, sem expor o token.
+                LumiSecrets.put(this,"mcp_endpoint",url);
+                prefs.edit().remove("mcp_endpoint")
+                    .putString("mcp_state","A iniciar ligacao").apply();
+                endpoint.setText("");
+                if(refreshBridge())info.setText("Credencial guardada; a iniciar ponte MCP...");
+                updateStatus();
+                DeskLog.event(this,"MCP","Credencial MCP guardada no Keystore");
+            }catch(Exception e){info.setText("Falha ao guardar credencial no Android Keystore.");}
         });
-        action(root,"Remover ligação MCP",()->{
-            new android.app.AlertDialog.Builder(this).setTitle("Remover ligação MCP?")
+        action(root,"Religar ou testar a ponte MCP",()->{
+            if(!XiaozhiMcpBridge.hasEndpoint(this)) {
+                info.setText("Configura primeiro o URL MCP do agente.");return;
+            }
+            if(refreshBridge())info.setText("A solicitar nova ligacao MCP...");
+        });
+        action(root,"Atualizar estado",this::updateStatus);
+        action(root,"Remover ligacao MCP",()->{
+            new android.app.AlertDialog.Builder(this).setTitle("Remover ligacao MCP?")
+                .setMessage("Remove a credencial encriptada e desliga apenas a ponte MCP.")
                 .setNegativeButton("Cancelar",null)
                 .setPositiveButton("Remover",(d,w)->{
-                    prefs.edit().remove("mcp_endpoint").putString("mcp_state","Por configurar").apply();
-                    restartService();info.setText("Ligação MCP removida.");
-                    DeskLog.event(this,"MCP","Ligação MCP removida");
+                    try {
+                        LumiSecrets.put(this,"mcp_endpoint","");
+                        prefs.edit().remove("mcp_endpoint")
+                            .putString("mcp_state","Por configurar").apply();
+                        refreshBridge();
+                        updateStatus();
+                        DeskLog.event(this,"MCP","Credencial MCP removida");
+                    }catch(Exception e) {
+                        info.setText("Falha ao remover a credencial MCP.");
+                    }
                 }).show();
         });
         action(root,"Voltar",this::finish);
+        updateStatus();
     }
+    @Override protected void onResume(){super.onResume();if(info!=null)updateStatus();}
 }

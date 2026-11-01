@@ -80,6 +80,12 @@ public final class XiaozhiMcpBridge {
         state("Desligado");
     }
 
+    /** Reconectar apenas MCP sem reiniciar os outros servicos do HUB. */
+    public void restartConnection() {
+        stop();
+        start();
+    }
+
     private void reconnect() {
         if(!stopped){
             handler.removeCallbacks(retry);
@@ -104,7 +110,7 @@ public final class XiaozhiMcpBridge {
             WebSocketClient ws = new WebSocketClient(new URI(url)) {
                 @Override public void onOpen(ServerHandshake handshake) {
                     if(stopped || client!=this){close();return;}
-                    state("Ligado ao XiaoZhi");
+                    state("Transporte ligado; a negociar MCP");
                 }
                 @Override public void onMessage(String payload) {
                     if(stopped || client!=this)return;
@@ -118,8 +124,9 @@ public final class XiaozhiMcpBridge {
                                 .put("protocolVersion", "2024-11-05")
                                 .put("capabilities", new JSONObject().put("tools", new JSONObject()))
                                 .put("serverInfo", new JSONObject()
-                                    .put("name", "LUMI-Hub").put("version", "0.15.0"));
+                                    .put("name", "LUMI-Hub").put("version", "0.15.1"));
                             reply(this, id, result);
+                            state("Ligado ao XiaoZhi");
                         } else if ("ping".equals(method)) {
                             reply(this, id, new JSONObject());
                         } else if ("tools/list".equals(method)) {

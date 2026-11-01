@@ -15,6 +15,7 @@ import android.os.IBinder;
 
 public final class HubService extends Service {
     private static final String CHANNEL = "lumi_hub_service";
+    public static final String ACTION_REFRESH_MCP = "pt.lumistudio.lumihub.action.REFRESH_MCP";
     private BroadcastReceiver batteryReceiver;
     private XiaozhiMcpBridge mcpBridge;
     private DeskVoiceGateway deskGateway;
@@ -106,6 +107,10 @@ public final class HubService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        // MCP settings can reconnect *only* the external bridge: do not
+        // stop the foreground service, local voice gateway or CORE socket.
+        if(intent!=null && ACTION_REFRESH_MCP.equals(intent.getAction())
+                && mcpBridge!=null) mcpBridge.restartConnection();
         syncCoreConnection();
         syncDeskGateway();
         return START_STICKY;

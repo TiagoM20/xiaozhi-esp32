@@ -816,7 +816,7 @@ public final class MainActivity extends Activity {
         entry.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         add(form,entry,10);
-        new AlertDialog.Builder(this).setTitle("LUMI V14 · DESK → HUB")
+        new AlertDialog.Builder(this).setTitle("LUMI V15.1 · DESK → HUB")
             .setView(form)
             .setNeutralButton("Remover", (dialog,which)->{
                 try{
@@ -847,15 +847,14 @@ public final class MainActivity extends Activity {
     }
 
     private void restartMcpService() {
-        if(serviceRunning()) {
-            Intent service = new Intent(this,HubService.class);
-            stopService(service);
-            try {
-                if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
-                else startService(service);
-            } catch(Exception error) {
-                notice("Serviço Android",error.getMessage());
-            }
+        // Refresh only MCP; preserving Home Assistant, local voice and CORE.
+        Intent service = new Intent(this,HubService.class);
+        service.setAction(HubService.ACTION_REFRESH_MCP);
+        try {
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
+            else startService(service);
+        }catch(Exception error) {
+            notice("Serviço Android",error.getMessage());
         }
         draw();
     }

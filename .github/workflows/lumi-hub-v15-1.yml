@@ -1,0 +1,117 @@
+name: LUMI HUB v15.1 — MCP Seguro
+
+on:
+  push:
+    branches: [feature/lumi-hub-v15-1-mcp-reliability-20261101]
+    paths:
+      - 'lumi-hub-android/**'
+      - '.github/workflows/lumi-hub-v15-1.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: lumi-hub-v15-1-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SM="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          yes | "$SM" --licenses >/dev/null || true
+          "$SM" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Audio demo asset (same as V15)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          mkdir -p lumi-hub-android/app/src/main/assets
+          curl -fLsS --retry 3 --max-time 60 "https://github.com/TiagoM20/xiaozhi-esp32/releases/download/lumi-voice-ptpt-demo-v0.1/LUMI-Raquel-PTPT-Demo.mp3" -o /tmp/raquel.mp3
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/raquel.mp3 -ar 24000 -ac 1 -c:a libopus -b:a 32k -frame_duration 60 -vbr off -application voip -f ogg /tmp/raquel.ogg
+          python3 tools/lumi-v12/ogg_packets.py /tmp/raquel.ogg lumi-hub-android/app/src/main/assets/lumi-raquel-24k-60ms.pkt
+      - name: Validate MCP security and compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "versionCode 29" lumi-hub-android/app/build.gradle
+          grep -q "versionName '0.15.1'" lumi-hub-android/app/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('lumi-hub-android/app/src/main/java/pt/lumistudio/lumihub')
+          settings=(src/'McpSettingsActivity.java').read_text()
+          bridge=(src/'XiaozhiMcpBridge.java').read_text()
+          service=(src/'HubService.java').read_text()
+          main=(src/'MainActivity.java').read_text()
+          core=(src/'LumiCoreActivity.java').read_text()
+          assert 'LumiSecrets.put(this,"mcp_endpoint",url)' in settings
+          assert 'LumiSecrets.put(this,"mcp_endpoint","")' in settings
+          assert '.putString("mcp_endpoint",url)' not in settings
+          assert 'getString("mcp_endpoint","").isEmpty()' not in settings
+          assert 'ACTION_REFRESH_MCP' in service and 'mcpBridge.restartConnection()' in service
+          assert 'restartConnection()' in bridge and 'state("Ligado ao XiaoZhi")' in bridge
+          assert 'stopService(service);' not in main[main.index('private void restartMcpService()'):main.index('private void restartMcpService()')+750]
+          assert 'XiaozhiMcpBridge.hasEndpoint(this)' in core
+          print('MCP secure storage, migration and non-disruptive reconnect validated')
+          PY
+      - name: Compile debug
+        shell: bash
+        run: gradle -p lumi-hub-android :app:assembleDebug --no-daemon --stacktrace
+      - name: Restore signing identity
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64"
+          test -n "$KEYSTORE_PASSWORD"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+          echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+          echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+      - name: Compile signed upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p lumi-hub-android :app:assembleRelease --no-daemon --stacktrace
+          APK=lumi-hub-android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p output
+          cp "$APK" output/LUMI-HUB-V15.1-ASSINADO.apk
+          (cd output && sha256sum LUMI-HUB-V15.1-ASSINADO.apk > SHA256-HUB-V15.1.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-V15.1-ASSINADO
+          path: output/*
+          retention-days: 30
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hub-v0.15.1
+          target_commitish: feature/lumi-hub-v15-1-mcp-reliability-20261101
+          name: LUMI HUB v15.1 — Ligacao MCP mais segura e estavel
+          prerelease: true
+          make_latest: false
+          body: |
+            APK Android v0.15.1 (versionCode 29), assinado com a identidade da V15.
+            Repara armazenamento de tokens MCP no separador dedicado: Android Keystore em vez de texto simples.
+            Elimina corretamente tokens antigos cifrados e em texto; reinicio apenas da ponte MCP.
+            Botao de religar e atualizar estado; so marca "Ligado ao XiaoZhi" apos resposta initialize.
+            Mantem Home Assistant, LG, servicos CORE, voz, perfis, memoria, dispositivos e visual da V15.
+            Nao inclui integracao Continente, que depende de Node.js/Playwright e autenticacao humana.
+            Build/assinatura validados em CI; ligacao ao servico online nao foi testada no tablet fisico.
+          files: output/*

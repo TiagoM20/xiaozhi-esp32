@@ -42,7 +42,7 @@ public final class LumiCoreActivity extends Activity {
         // onStartCommand aplica a alteração sem desligar o CORE nem perder áudio.
         if(on||prefs.getBoolean("service_running",false)||
             prefs.getBoolean("lumi_core_sync_enabled",false)||
-            !prefs.getString("mcp_endpoint","").isEmpty()){
+            XiaozhiMcpBridge.hasEndpoint(this)){
             try{
                 if(Build.VERSION.SDK_INT>=26)startForegroundService(service);
                 else startService(service);

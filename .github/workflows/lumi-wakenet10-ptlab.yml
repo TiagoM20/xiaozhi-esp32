@@ -63,7 +63,7 @@ jobs:
           grep -qx 'CONFIG_USE_AFE_WAKE_WORD=y' sdkconfig
           grep -qx 'CONFIG_SR_WN_WN10_PT_OLAESP=y' sdkconfig
           grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
-          grep -qx 'CONFIG_USE_DEVICE_AEC=n' sdkconfig
+          if grep -qx 'CONFIG_USE_DEVICE_AEC=y' sdkconfig; then echo "Device AEC unexpectedly enabled"; exit 1; fi
           grep -qx 'CONFIG_USE_AUDIO_PROCESSOR=y' sdkconfig
           test -s build/xiaozhi.bin
           test -s build/generated_assets.bin

@@ -33,7 +33,9 @@ _WAKE_WORD_TARGETS = (
     "esp32p4",
     "esp32s31",
 )
-_WAKE_WORD_MODEL_PATTERN = re.compile(r"^wn9[sl]?_[a-z0-9_]+$")
+# ESP-SR 2.5+ also ships WakeNet10 models. Keep WakeNet9s-only
+# restrictions for lite chips below in _wake_word_sdkconfig_options.
+_WAKE_WORD_MODEL_PATTERN = re.compile(r"^wn(?:9[sl]?|10s?)_[a-z0-9_]+$")
 _ESP_SR_KCONFIG = Path(
     "managed_components/espressif__esp-sr/Kconfig.projbuild"
 )
@@ -367,7 +369,7 @@ def _wake_word_sdkconfig_options(
         raise ValueError(
             f"Invalid wake word {wake_word!r}. Use 'disabled', "
             "'nihaoxiaozhi', or an ESP-SR model name such as "
-            "'wn9_jarvis_tts'."
+            "'wn9_jarvis_tts' or 'wn10_pt_olaesp'."
         )
     if target in _LITE_WAKE_WORD_TARGETS and not normalized.startswith("wn9s_"):
         raise ValueError(

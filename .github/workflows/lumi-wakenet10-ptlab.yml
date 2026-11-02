@@ -1,0 +1,143 @@
+name: LUMI DESK Lab — WakeNet10 portugues (NAO INSTALAR)
+
+on:
+  push:
+    branches: [feature/lumi-desk-wakenet10-ptlab-20261102]
+    paths:
+      - 'main/**'
+      - 'scripts/build_default_assets.py'
+      - '.github/workflows/lumi-wakenet10-ptlab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lumi-wn10-ptlab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lab-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar configuracao Waveshare pt-PT (isolada no runner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          config=json.loads(p.read_text())
+          options=config["builds"][0]["sdkconfig_append"]
+          overrides={
+              "CONFIG_USE_DEVICE_AEC": "n",
+              "CONFIG_USE_SERVER_AEC": "n",
+              "CONFIG_USE_AUDIO_PROCESSOR": "y",
+              "CONFIG_SEND_WAKE_WORD_DATA": "n",
+              "CONFIG_WAKE_WORD_DETECTION_IN_LISTENING": "n",
+          }
+          config["builds"][0]["sdkconfig_append"]=[
+              x for x in options if x.split("=",1)[0] not in overrides
+          ]+[f"{k}={v}" for k,v in overrides.items()]
+          p.write_text(json.dumps(config,indent=2,ensure_ascii=False)+"\n")
+          print("Waveshare 1.54, ESP32-S3, no AEC, AFE enabled")
+          PY
+          grep -q 'espressif/esp-sr: ==2.6.1' main/idf_component.yml
+
+      - name: Compilar APP + ASSETS em conjunto com WakeNet10 portugues
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 \
+            --name esp32-s3-touch-lcd-1.54 \
+            --language pt-PT \
+            --wake-word wn10_pt_olaesp
+          grep -qx 'CONFIG_USE_AFE_WAKE_WORD=y' sdkconfig
+          grep -qx 'CONFIG_SR_WN_WN10_PT_OLAESP=y' sdkconfig
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          grep -qx 'CONFIG_USE_DEVICE_AEC=n' sdkconfig
+          grep -qx 'CONFIG_USE_AUDIO_PROCESSOR=y' sdkconfig
+          test -s build/xiaozhi.bin
+          test -s build/generated_assets.bin
+
+      - name: Auditar WakeNet10, 21 GIFs, particionamento e manifesto
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct, json, hashlib
+
+          image=Path("build/generated_assets.bin").read_bytes()
+          n,checksum,nbytes=struct.unpack_from("<III",image,0)
+          assert n>0 and 12+n*44<=len(image),f"invalid assets header {n}"
+          assert nbytes<=len(image)-12, "invalid assets body length"
+          assert (sum(image[12:12+nbytes])&0xffff)==checksum, "assets checksum failed"
+
+          assets={}
+          for i in range(n):
+              pos=12+i*44
+              raw,size,offset,w,h=struct.unpack_from("<32sIIHH",image,pos)
+              name=raw.split(b"\x00",1)[0].decode("utf-8")
+              assert name not in assets, "duplicate asset"
+              start=12+n*44+offset
+              assert image[start:start+2]==b"ZZ",f"bad file prefix {name}"
+              assert start+2+size<=len(image), "out of bounds"
+              assets[name]=image[start+2:start+2+size]
+
+          assert "index.json" in assets and "srmodels.bin" in assets, "missing model metadata"
+          idx=json.loads(assets["index.json"])
+          assert idx.get("srmodels")=="srmodels.bin",idx
+          assert "multinet_model" not in idx,"Unexpected MultiNet custom wake word"
+          gifs=[name for name in assets if name.lower().endswith(".gif")]
+          assert len(gifs)>=21, f"Expected original 21 GIFs, found {len(gifs)}."
+          assert all(assets[name][:6] in (b"GIF89a",b"GIF87a") for name in gifs)
+          sr=assets["srmodels.bin"]
+          assert len(sr)>200000, "Missing actual WakeNet model data"
+          assert b"wn10_pt_olaesp" in sr, "Wrong model included"
+          assert b"wn10_data" in sr and b"_MODEL_INFO_" in sr, "Model p1 was not renamed"
+          assert b"wn10_data_p1" not in sr and b"wn10_data_p2" not in sr, "Wrong raw WakeNet slices"
+          assert len(image)<=0x400000, "Exceeds 4 MiB assets partition"
+          app=Path("build/xiaozhi.bin").read_bytes()
+          assert 1_000_000<len(app)<=0x3F0000, "App partition overflow"
+          manifest={
+              "status":"LAB_ONLY_NOT_TO_FLASH",
+              "model":"wn10_pt_olaesp",
+              "target":"esp32s3",
+              "espsr":"2.6.1",
+              "gifs":len(gifs),
+              "gif_sha256":{n:hashlib.sha256(assets[n]).hexdigest() for n in gifs},
+              "asset_names":sorted(assets),
+              "assets_bytes":len(image),
+              "app_bytes":len(app),
+              "app_sha256":hashlib.sha256(app).hexdigest(),
+              "assets_sha256":hashlib.sha256(image).hexdigest(),
+              "all_assets_checksum_valid":True,
+          }
+          out=Path("output");out.mkdir(exist_ok=True)
+          (out/"LAB_MANIFEST_WAKENET10.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+          # The lab does NOT publish flashable binaries: the exact GIFs on the real
+          # device must be compared before permitting any assets update.
+          (out/"README_NAO_INSTALAR.txt").write_text(
+              "LABORATORIO: modelo Ola ESP, nao Lumi.\n"
+              "Nao instalar em hardware. A app e assets devem ser atualizados juntos.\n"
+              "Os hashes dos 21 GIFs do hardware real ainda nao foram comparados.\n"
+              "O programa LUMI CORE v0.7 NAO e compativel com este teste.\n"
+              "Backups e testes fisicos sao obrigatorios.\n"
+          )
+          print("OK WakeNet10 pt, gifs:",len(gifs),
+                "model",len(sr),"assets",len(image),"app",len(app))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-WAKENET10-PTPT-LAB-RELATORIO-SEM-FIRMWARE
+          path: output/*
+          retention-days: 14

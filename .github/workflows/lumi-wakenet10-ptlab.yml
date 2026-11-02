@@ -6,6 +6,7 @@ on:
     paths:
       - 'main/**'
       - 'scripts/build_default_assets.py'
+      - 'scripts/build.py'
       - '.github/workflows/lumi-wakenet10-ptlab.yml'
   workflow_dispatch:
 

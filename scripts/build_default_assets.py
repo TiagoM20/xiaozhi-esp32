@@ -925,6 +925,7 @@ def main():
     wakenet_model_names = read_wakenet_from_sdkconfig(args.sdkconfig)
     multinet_model_names = read_multinet_from_sdkconfig(args.sdkconfig)
     
+    lumi_dual_wake = os.environ.get('LUMI_DUAL_WAKE') == '1'
     # Apply wake word logic to decide which models to package
     wakenet_model_paths = []
     multinet_model_paths = []
@@ -941,8 +942,8 @@ def main():
         print("Please select appropriate CONFIG_SR_MN_* options in menuconfig, or disable USE_CUSTOM_WAKE_WORD")
         sys.exit(1)
     
-    # 3. Only package multinet models if USE_CUSTOM_WAKE_WORD=y
-    if wake_word_config['use_custom_wake_word']:
+    # 3. In the isolated LUMI dual test, package MultiNet alongside WakeNet.
+    if wake_word_config['use_custom_wake_word'] or lumi_dual_wake:
         multinet_model_paths = get_multinet_model_paths(multinet_model_names, args.esp_sr_model_path)
     elif multinet_model_names:
         print(f"  Note: Found multinet models {multinet_model_names} but USE_CUSTOM_WAKE_WORD is disabled, skipping")
@@ -974,6 +975,14 @@ def main():
     
     # Read custom wake word configuration
     custom_wake_word_config = read_custom_wake_word_from_sdkconfig(args.sdkconfig)
+    if lumi_dual_wake:
+        # MultiNet6 EN is not a native PT wake-word model. This is an
+        # explicitly experimental phonetic approximation of "Olá Lumi".
+        custom_wake_word_config = {
+            'wake_word': 'OH LA LOO ME',
+            'display': 'Olá Lumi',
+            'threshold': 0.45,
+        }
     multinet_model_info = None
     
     if custom_wake_word_config and multinet_model_paths:

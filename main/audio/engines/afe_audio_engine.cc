@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_log.h>

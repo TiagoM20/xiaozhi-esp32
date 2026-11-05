@@ -195,6 +195,28 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         return false;
     }
 
+    // LUMI experimental: keep WakeNet10 (Ola ESP) and run a separate
+    // English MultiNet6 phonetic detector for "Ola Lumi" on the same AFE audio.
+    // If the second engine cannot initialize, WakeNet remains available.
+    if (wake_detector_ == WakeDetector::kWakeNet && multinet_model_name != nullptr) {
+        custom_wake_word_ = std::make_unique<CustomWakeWord>();
+        custom_wake_word_->OnWakeWordDetected([this](const std::string& word) {
+            last_detected_wake_word_ = word;
+            last_wake_from_multinet_.store(true);
+            xEventGroupClearBits(event_group_, kWakeWordEnabled);
+            UpdateActiveState();
+            if (wake_word_detected_callback_) {
+                wake_word_detected_callback_(word);
+            }
+        });
+        if (!custom_wake_word_->Initialize(codec_, models_)) {
+            ESP_LOGW(TAG, "LUMI dual wake: MultiNet could not start; keeping WakeNet only");
+            custom_wake_word_.reset();
+        } else {
+            ESP_LOGI(TAG, "LUMI dual wake: WakeNet10 PT + MultiNet6 phonetic active");
+        }
+    }
+
     if (wake_detector_ == WakeDetector::kWakeNet) {
         afe_iface_->disable_wakenet(afe_data_);
     }
@@ -278,13 +300,13 @@ void AfeAudioEngine::EnableWakeWordDetection(bool enable) {
     // WakeNet enable/disable on the AFE instance is applied by ProcessingTask
     // (see ApplyAfeControls), driven by the kWakeWordEnabled bit.
     if (enable) {
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Start();
         }
         xEventGroupSetBits(event_group_, kWakeWordEnabled);
     } else {
         xEventGroupClearBits(event_group_, kWakeWordEnabled);
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Stop();
         }
     }
@@ -447,6 +469,14 @@ void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
         return;
     }
 
+    // Feed both engines concurrently, but dispatch at most one wake event.
+    if (custom_wake_word_ != nullptr && wake_detector_ == WakeDetector::kWakeNet) {
+        custom_wake_word_->FeedMono(result->data, result->data_size / sizeof(int16_t));
+        if ((xEventGroupGetBits(event_group_) & kWakeWordEnabled) == 0) {
+            return;  // MultiNet already accepted "Ola Lumi".
+        }
+    }
+
 #if CONFIG_SEND_WAKE_WORD_DATA
     wake_word_audio_cache_.Store(result->data, result->data_size / sizeof(int16_t));
 #endif
@@ -460,6 +490,7 @@ void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
         return;
     }
 
+    last_wake_from_multinet_.store(false);
     last_detected_wake_word_ = wake_words_[model_index];
     xEventGroupClearBits(event_group_, kWakeWordEnabled);
     // UpdateActiveState marks the AFE controls dirty; the next loop iteration
@@ -525,7 +556,7 @@ void AfeAudioEngine::OutputRawAudio(const std::vector<int16_t>& data) {
 }
 
 void AfeAudioEngine::EncodeWakeWordData() {
-    if (wake_detector_ == WakeDetector::kMultiNet) {
+    if (wake_detector_ == WakeDetector::kMultiNet || last_wake_from_multinet_.load()) {
         custom_wake_word_->EncodeWakeWordData();
         return;
     }
@@ -616,7 +647,7 @@ void AfeAudioEngine::EncodeWakeWordData() {
 }
 
 bool AfeAudioEngine::GetWakeWordOpus(std::vector<uint8_t>& opus) {
-    if (wake_detector_ == WakeDetector::kMultiNet) {
+    if (wake_detector_ == WakeDetector::kMultiNet || last_wake_from_multinet_.load()) {
         return custom_wake_word_->GetWakeWordOpus(opus);
     }
     if (wake_detector_ != WakeDetector::kWakeNet) {

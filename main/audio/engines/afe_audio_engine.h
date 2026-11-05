@@ -56,7 +56,7 @@ private:
     static constexpr EventBits_t kWakeWordEnabled = 1 << 0;
     static constexpr EventBits_t kVoiceProcessingEnabled = 1 << 1;
     static constexpr EventBits_t kAfeActive = 1 << 2;
-    static constexpr size_t kProcessingTaskStackSize = 4096;
+    static constexpr size_t kProcessingTaskStackSize = 8192;
 
     AudioCodec* codec_ = nullptr;
     srmodel_list_t* models_ = nullptr;

@@ -1,10 +1,10 @@
-name: LUMI dual wake Ola ESP e Ola Lumi (experimental)
+name: LUMI V5 protected dual wake WakeNet10 + MultiNet5Q8
 on:
   workflow_dispatch:
   pull_request:
     branches: [main]
   push:
-    branches: [lumi/dual-olaesp-olalumi-test-01]
+    branches: [lumi/dual-safe-mn5q8-guarded]
     paths:
       - '.github/workflows/lumi-dual-wake-pt.yml'
       - 'main/idf_component.yml'
@@ -39,10 +39,23 @@ jobs:
             'CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS':'n',
             'CONFIG_SR_WN_WN10_PT_OLAESP':'y',
             'CONFIG_SR_MN_CN_NONE':'y',
-            'CONFIG_SR_MN_EN_MULTINET6_QUANT':'y'}
+            'CONFIG_SR_MN_EN_MULTINET5_SINGLE_RECOGNITION_QUANT8':'y'}
           opts=cfg['builds'][0]['sdkconfig_append']
           cfg['builds'][0]['sdkconfig_append']=[o for o in opts if o.split('=')[0] not in overrides]+[f'{k}={v}' for k,v in overrides.items()]
           p.write_text(json.dumps(cfg,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+      - name: Check fallback and reset protection source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('main/audio/engines/afe_audio_engine.cc').read_text()
+          for marker in ('LUMI SAFE MODE', 'kLumiDualActiveMarker', 'kLumiMinPsramBeforeMultiNet',
+                         'kLumiMinInternalBeforeMultiNet', 'ESP_RST_PANIC'):
+            if marker not in source and marker != 'ESP_RST_PANIC':
+              raise RuntimeError('Missing safety guard: '+marker)
+          assert 'kProcessingTaskStackSize = 8192' in Path('main/audio/engines/afe_audio_engine.h').read_text()
+          print('LUMI V5 guard source confirmed')
           PY
       - name: Build both local speech models
         shell: bash
@@ -57,32 +70,32 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile,ZIP_DEFLATED
           cfg=Path('sdkconfig').read_text()
-          for s in ('CONFIG_USE_AFE_WAKE_WORD=y','CONFIG_SR_WN_WN10_PT_OLAESP=y','CONFIG_LANGUAGE_PT_PT=y','CONFIG_SR_MN_EN_MULTINET6_QUANT=y','# CONFIG_USE_CUSTOM_WAKE_WORD is not set'):
+          for s in ('CONFIG_USE_AFE_WAKE_WORD=y','CONFIG_SR_WN_WN10_PT_OLAESP=y','CONFIG_LANGUAGE_PT_PT=y','CONFIG_SR_MN_EN_MULTINET5_SINGLE_RECOGNITION_QUANT8=y','# CONFIG_USE_CUSTOM_WAKE_WORD is not set'):
             assert s in cfg.splitlines(),s
           fw=Path('build/xiaozhi.bin').read_bytes()
           assets=Path('build/generated_assets.bin').read_bytes()
           assert fw[0]==0xe9 and 100000<len(fw)<0x3f0000
-          assert b'wn10_pt_olaesp' in assets and b'mn6_en' in assets and b'OH LA LOO ME' in assets and b'multinet_model' in assets and 12<len(assets)<0x800000
-          manifest={'format':'lumi-windows-experimental-v2','board':'waveshare/esp32-s3-touch-lcd-1.54','chip':'esp32s3','sr_version':'2.6.1','wake_words':['Olá ESP','Olá Lumi (experimental)'],'wake_models':['wn10_pt_olaesp','mn6_en'],'wake_word_lumi_ready':False,'wake_word_lumi_experimental':True,'flash_size':16777216,'firmware':{'name':'firmware.bin','sha256':hashlib.sha256(fw).hexdigest(),'size':len(fw)},'model_assets':{'name':'model-assets.bin','sha256':hashlib.sha256(assets).hexdigest(),'size':len(assets)},'assets_policy':'merge-srmodels-and-multinet-config-preserve-existing-fonts-and-emojis'}
-          with ZipFile('LUMI-Dual-Wake-PT-Experimental.zip','w',ZIP_DEFLATED,compresslevel=6) as z:
+          assert b'wn10_pt_olaesp' in assets and b'mn5q8_en' in assets and b'OH LA LOO ME' in assets and b'multinet_model' in assets and 12<len(assets)<0x800000
+          manifest={'format':'lumi-windows-experimental-v3','board':'waveshare/esp32-s3-touch-lcd-1.54','chip':'esp32s3','sr_version':'2.6.1','wake_words':['Olá ESP','Olá Lumi (experimental)'],'wake_models':['wn10_pt_olaesp','mn5q8_en'],'wake_word_lumi_ready':False,'wake_word_lumi_experimental':True,'boot_loop_guard':True,'low_memory_fallback':'WakeNet10_only','flash_size':16777216,'firmware':{'name':'firmware.bin','sha256':hashlib.sha256(fw).hexdigest(),'size':len(fw)},'model_assets':{'name':'model-assets.bin','sha256':hashlib.sha256(assets).hexdigest(),'size':len(assets)},'assets_policy':'merge-srmodels-and-multinet-config-preserve-existing-fonts-and-emojis'}
+          with ZipFile('LUMI-V5-Dual-Safe-Experimental.zip','w',ZIP_DEFLATED,compresslevel=6) as z:
             z.writestr('manifest.json',json.dumps(manifest,indent=2,ensure_ascii=False))
             z.writestr('firmware.bin',fw)
             z.writestr('model-assets.bin',assets)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: LUMI-Dual-Wake-PT-Experimental
-          path: LUMI-Dual-Wake-PT-Experimental.zip
+          name: LUMI-V5-Dual-Safe-Experimental
+          path: LUMI-V5-Dual-Safe-Experimental.zip
           retention-days: 30
       - name: Publish opt-in experimental release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-dual-wake-pt-test
+          tag_name: lumi-dual-safe-v5-test
           target_commitish: ${{ github.sha }}
-          name: LUMI Dual Wake PT experimental
+          name: LUMI V5 Dual Wake PT experimental (guarded)
           prerelease: true
           make_latest: false
-          files: LUMI-Dual-Wake-PT-Experimental.zip
+          files: LUMI-V5-Dual-Safe-Experimental.zip
           fail_on_unmatched_files: true
           overwrite_files: true

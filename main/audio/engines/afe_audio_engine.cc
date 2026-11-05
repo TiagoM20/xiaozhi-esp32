@@ -80,7 +80,8 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         }
     }
 
-    if (multinet_model_name != nullptr) {
+    // If both detectors are packaged, keep WakeNet as the primary AFE wake engine.
+    if (multinet_model_name != nullptr && wakenet_model_name == nullptr) {
         wake_detector_ = WakeDetector::kMultiNet;
         custom_wake_word_ = std::make_unique<CustomWakeWord>();
         custom_wake_word_->OnWakeWordDetected([this](const std::string& wake_word) {

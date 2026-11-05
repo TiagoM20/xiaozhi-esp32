@@ -124,8 +124,12 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     for (int i = 0; i < commands_.size(); i++) {
         esp_mn_commands_add(i + 1, commands_[i].command.c_str());
     }
-    esp_mn_commands_update();
-    
+    auto* update_error = esp_mn_commands_update();
+    if (update_error != nullptr) {
+        ESP_LOGE(TAG, "MultiNet rejected phonetic wake command; disabling experimental wake");
+        return false;
+    }
+
     multinet_->print_active_speech_commands(multinet_model_data_);
 #if CONFIG_SEND_WAKE_WORD_DATA
     if (!wake_word_audio_cache_.Initialize(16000 * 2)) {
@@ -191,7 +195,12 @@ void CustomWakeWord::FeedSamples(const int16_t* data, size_t samples, bool mono)
             for (int i = 0; i < mn_result->num && running_; i++) {
                 ESP_LOGI(TAG, "Custom wake word detected: command_id=%d, string=%s, prob=%f", 
                         mn_result->command_id[i], mn_result->string, mn_result->prob[i]);
-                auto& command = commands_[mn_result->command_id[i] - 1];
+                const int command_id = mn_result->command_id[i];
+                if (command_id < 1 || command_id > static_cast<int>(commands_.size())) {
+                    ESP_LOGW(TAG, "Ignoring out-of-range MultiNet command: %d", command_id);
+                    continue;
+                }
+                auto& command = commands_[command_id - 1];
                 if (command.action == "wake") {
                     last_detected_wake_word_ = command.text;
                     running_ = false;

@@ -5,7 +5,9 @@
 #include <sstream>
 #include <vector>
 
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <esp_vadn_models.h>
@@ -14,6 +16,15 @@
 #include "wake_words/custom_wake_word.h"
 
 #define TAG "AfeAudioEngine"
+
+// LUMI safe dual-wake trial: RTC marker survives watchdog/panic resets.
+// A failed run of the optional MultiNet engine must not trap the device in a
+// boot loop; the next boot falls back to the proven WakeNet-only path.
+RTC_NOINIT_ATTR static uint32_t s_lumi_dual_active_marker;
+static constexpr uint32_t kLumiDualActiveMarker = 0x4C554D35; // "LUM5"
+static constexpr size_t kLumiMinPsramBeforeMultiNet = 3200 * 1024;
+static constexpr size_t kLumiMinPsramAfterMultiNet = 700 * 1024;
+static constexpr size_t kLumiMinInternalBeforeMultiNet = 96 * 1024;
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 static constexpr bool kUseAfeForVoiceProcessing = true;
@@ -80,7 +91,8 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         }
     }
 
-    if (multinet_model_name != nullptr) {
+    // If both detectors are packaged, keep WakeNet as the primary AFE wake engine.
+    if (multinet_model_name != nullptr && wakenet_model_name == nullptr) {
         wake_detector_ = WakeDetector::kMultiNet;
         custom_wake_word_ = std::make_unique<CustomWakeWord>();
         custom_wake_word_->OnWakeWordDetected([this](const std::string& wake_word) {
@@ -195,6 +207,65 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         return false;
     }
 
+    // LUMI V5: MultiNet5 Q8 uses less PSRAM than MultiNet6. Do not even
+    // allocate the secondary model if the WakeNet/AFE/LVGL baseline has
+    // insufficient free memory. On any reset after the optional model was
+    // active, revert to WakeNet-only for the next boot.
+    if (wake_detector_ == WakeDetector::kWakeNet && multinet_model_name != nullptr) {
+        const esp_reset_reason_t reset_reason = esp_reset_reason();
+        const bool previously_active = (s_lumi_dual_active_marker == kLumiDualActiveMarker);
+        const bool recovery_boot = previously_active &&
+            reset_reason != ESP_RST_POWERON && reset_reason != ESP_RST_EXT &&
+            reset_reason != ESP_RST_USB;
+        s_lumi_dual_active_marker = 0;
+
+        const size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        const size_t largest_psram = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+        const size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        const size_t largest_internal = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        ESP_LOGI(TAG, "LUMI V5 reset=%d previous=%d, PSRAM free=%u largest=%u, internal free=%u largest=%u",
+                 (int)reset_reason, (int)previously_active, (unsigned)free_psram,
+                 (unsigned)largest_psram, (unsigned)free_internal, (unsigned)largest_internal);
+
+        if (recovery_boot) {
+            ESP_LOGW(TAG, "LUMI SAFE MODE: previous dual-wake session reset; only Ola ESP will run");
+        } else if (free_psram < kLumiMinPsramBeforeMultiNet ||
+                   largest_psram < 1800 * 1024 ||
+                   free_internal < kLumiMinInternalBeforeMultiNet ||
+                   largest_internal < 32 * 1024) {
+            ESP_LOGW(TAG, "LUMI SAFE MODE: insufficient memory headroom for MultiNet5; Ola ESP stays enabled");
+        } else {
+            // Marker is set BEFORE entering the optional model. If ESP-SR
+            // aborts/WDTS during allocation, next boot automatically disables it.
+            s_lumi_dual_active_marker = kLumiDualActiveMarker;
+            custom_wake_word_ = std::make_unique<CustomWakeWord>();
+            custom_wake_word_->OnWakeWordDetected([this](const std::string& word) {
+                last_detected_wake_word_ = word;
+                last_wake_from_multinet_.store(true);
+                xEventGroupClearBits(event_group_, kWakeWordEnabled);
+                UpdateActiveState();
+                if (wake_word_detected_callback_) {
+                    wake_word_detected_callback_(word);
+                }
+            });
+            if (!custom_wake_word_->Initialize(codec_, models_)) {
+                ESP_LOGW(TAG, "LUMI V5: MultiNet init failed, returning to WakeNet-only");
+                custom_wake_word_.reset();
+                s_lumi_dual_active_marker = 0;
+            } else {
+                const size_t after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+                const size_t after_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+                ESP_LOGI(TAG, "LUMI V5: MultiNet5 initialized; PSRAM remaining=%u, internal remaining=%u",
+                         (unsigned)after, (unsigned)after_internal);
+                if (after < kLumiMinPsramAfterMultiNet || after_internal < 48 * 1024) {
+                    ESP_LOGW(TAG, "LUMI V5: post-init memory too low; disabling MultiNet");
+                    custom_wake_word_.reset();
+                    s_lumi_dual_active_marker = 0;
+                }
+            }
+        }
+    }
+
     if (wake_detector_ == WakeDetector::kWakeNet) {
         afe_iface_->disable_wakenet(afe_data_);
     }
@@ -278,13 +349,13 @@ void AfeAudioEngine::EnableWakeWordDetection(bool enable) {
     // WakeNet enable/disable on the AFE instance is applied by ProcessingTask
     // (see ApplyAfeControls), driven by the kWakeWordEnabled bit.
     if (enable) {
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Start();
         }
         xEventGroupSetBits(event_group_, kWakeWordEnabled);
     } else {
         xEventGroupClearBits(event_group_, kWakeWordEnabled);
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Stop();
         }
     }
@@ -447,6 +518,14 @@ void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
         return;
     }
 
+    // Feed both engines concurrently, but dispatch at most one wake event.
+    if (custom_wake_word_ != nullptr && wake_detector_ == WakeDetector::kWakeNet) {
+        custom_wake_word_->FeedMono(result->data, result->data_size / sizeof(int16_t));
+        if ((xEventGroupGetBits(event_group_) & kWakeWordEnabled) == 0) {
+            return;  // MultiNet already accepted "Ola Lumi".
+        }
+    }
+
 #if CONFIG_SEND_WAKE_WORD_DATA
     wake_word_audio_cache_.Store(result->data, result->data_size / sizeof(int16_t));
 #endif
@@ -460,6 +539,7 @@ void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
         return;
     }
 
+    last_wake_from_multinet_.store(false);
     last_detected_wake_word_ = wake_words_[model_index];
     xEventGroupClearBits(event_group_, kWakeWordEnabled);
     // UpdateActiveState marks the AFE controls dirty; the next loop iteration
@@ -525,7 +605,7 @@ void AfeAudioEngine::OutputRawAudio(const std::vector<int16_t>& data) {
 }
 
 void AfeAudioEngine::EncodeWakeWordData() {
-    if (wake_detector_ == WakeDetector::kMultiNet) {
+    if (wake_detector_ == WakeDetector::kMultiNet || last_wake_from_multinet_.load()) {
         custom_wake_word_->EncodeWakeWordData();
         return;
     }
@@ -616,7 +696,7 @@ void AfeAudioEngine::EncodeWakeWordData() {
 }
 
 bool AfeAudioEngine::GetWakeWordOpus(std::vector<uint8_t>& opus) {
-    if (wake_detector_ == WakeDetector::kMultiNet) {
+    if (wake_detector_ == WakeDetector::kMultiNet || last_wake_from_multinet_.load()) {
         return custom_wake_word_->GetWakeWordOpus(opus);
     }
     if (wake_detector_ != WakeDetector::kWakeNet) {

@@ -6,6 +6,7 @@
 #include "button.h"
 #include "config.h"
 #include "mcp_server.h"
+#include "lumi_sd_media.h"
 
 #include <esp_log.h>
 #include "i2c_device.h"
@@ -60,6 +61,7 @@ private:
     LcdDisplay* display_;
     PowerManager* power_manager_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
+    LumiSdMedia sd_media_; // No hardware access from constructor.
 
     void InitializePowerManager() {
         power_manager_ = new PowerManager(BATTERY_CHARGING_PIN, BATTERY_ADC_PIN, BATTERY_EN_PIN);
@@ -274,6 +276,64 @@ private:
     // 初始化工具
     void InitializeTools() {
         auto &mcp_server = McpServer::GetInstance();
+        // All SD features are explicit tools. Status never probes the card;
+        // no SDMMC initialization is performed in the boot path.
+        mcp_server.AddTool("self.sdcard.status",
+            "Consulta se o microSD ja esta montado na LUMI, sem tentar le-lo.",
+            PropertyList(), [this](const PropertyList&) -> ReturnValue {
+                return sd_media_.Status();
+            });
+        mcp_server.AddTool("self.sdcard.mount",
+            "A pedido explicito do utilizador, tenta ativar o microSD da LUMI DESK. "
+            "Nunca formatar nem apagar ficheiros. Se falhar, a LUMI continua a funcionar.",
+            PropertyList(), [this](const PropertyList&) -> ReturnValue {
+                return sd_media_.Mount();
+            });
+        mcp_server.AddTool("self.sdcard.list",
+            "Lista ate 20 ficheiros numa pasta do cartao: sons, audios ou imagens. "
+            "Para usar, indica a pasta exata.",
+            PropertyList({Property("pasta", kPropertyTypeString)}),
+            [this](const PropertyList& p) -> ReturnValue {
+                return sd_media_.List(p["pasta"].value<std::string>());
+            });
+        mcp_server.AddTool("self.sdcard.play_sound",
+            "Reproduz um sinal sonoro OGG/Opus curto da pasta LUMI/sons do microSD. "
+            "O nome completo do ficheiro e obrigatorio, por exemplo alarme.ogg.",
+            PropertyList({Property("ficheiro", kPropertyTypeString)}),
+            [this](const PropertyList& p) -> ReturnValue {
+                return sd_media_.Play(p["ficheiro"].value<std::string>(), false);
+            });
+        mcp_server.AddTool("self.sdcard.play_audio",
+            "Reproduz um audio longo OGG/Opus por streaming, como uma meditacao ou historia, "
+            "da pasta LUMI/audios, sem carregar o ficheiro inteiro na RAM.",
+            PropertyList({Property("ficheiro", kPropertyTypeString)}),
+            [this](const PropertyList& p) -> ReturnValue {
+                return sd_media_.Play(p["ficheiro"].value<std::string>(), true);
+            });
+        mcp_server.AddTool("self.sdcard.show_image",
+            "Mostra no ecra uma imagem JPG ou PNG da pasta LUMI/imagens do microSD, "
+            "com dimensoes adequadas ao LCD 240x240.",
+            PropertyList({Property("ficheiro", kPropertyTypeString)}),
+            [this](const PropertyList& p) -> ReturnValue {
+                return sd_media_.ShowImage(p["ficheiro"].value<std::string>());
+            });
+        mcp_server.AddTool("self.sdcard.stop_media",
+            "Para a reproducao local do ficheiro do cartao.",
+            PropertyList(), [this](const PropertyList&) -> ReturnValue {
+                return sd_media_.Stop();
+            });
+        mcp_server.AddTool("self.timer.start",
+            "Cria um temporizador local independente da Internet, por um numero de segundos "
+            "entre 1 e 14400. Ao terminar, reproduz o som do microSD se disponivel.",
+            PropertyList({Property("segundos", kPropertyTypeInteger, 1, 14400)}),
+            [this](const PropertyList& p) -> ReturnValue {
+                return sd_media_.SetTimer(p["segundos"].value<int>());
+            });
+        mcp_server.AddTool("self.timer.cancel",
+            "Cancela o temporizador local da LUMI.",
+            PropertyList(), [this](const PropertyList&) -> ReturnValue {
+                return sd_media_.CancelTimer();
+            });
         mcp_server.AddTool("self.system.reconfigure_wifi",
             "Reboot the device and enter WiFi configuration mode.\n"
             "**CAUTION** You must ask the user to confirm this action.",

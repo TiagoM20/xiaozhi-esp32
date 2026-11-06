@@ -25,6 +25,7 @@
 #include "audio_service.h"
 #include "board.h"
 #include "device_state.h"
+#include "display.h"
 #include "assets/lang_config.h"
 #include "lvgl_image.h"
 #include "ogg_demuxer.h"

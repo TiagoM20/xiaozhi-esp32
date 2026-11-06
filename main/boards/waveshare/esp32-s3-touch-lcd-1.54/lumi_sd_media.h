@@ -5,7 +5,7 @@
 #include <mutex>
 #include <string>
 
-struct sdmmc_card_t;
+#include <sdmmc_cmd.h>
 
 class LumiSdMedia {
 public:

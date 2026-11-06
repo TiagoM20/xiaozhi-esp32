@@ -463,6 +463,7 @@ elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_LCD_3_49_V2)
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
 elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_LCD_1_54)
     set(BOARD_DIR "waveshare/esp32-s3-touch-lcd-1.54")
+    list(APPEND SOURCES "boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_sd_media.cc")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_20_4)
     set(BUILTIN_ICON_FONT font_material_symbols_20_4)
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
@@ -1098,6 +1099,12 @@ if(CONFIG_BOARD_TYPE_ESP_VOCAT AND IDF_VERSION_MAJOR LESS 6)
     )
 endif()
 if(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD)
+    list(APPEND MAIN_PRIV_REQUIRES_EXTRA
+        esp_driver_sdmmc
+        sdmmc
+    )
+endif()
+if(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_LCD_1_54)
     list(APPEND MAIN_PRIV_REQUIRES_EXTRA
         esp_driver_sdmmc
         sdmmc

@@ -1,0 +1,102 @@
+name: LUMI V6 microSD safe + WakeNet10 PT
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [lumi/v6-sd-safe-wakenet10]
+    paths:
+      - '.github/workflows/lumi-v6-sd-pt.yml'
+      - 'main/idf_component.yml'
+      - 'main/audio/**'
+      - 'main/boards/waveshare/esp32-s3-touch-lcd-1.54/**'
+      - 'main/CMakeLists.txt'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure WakeNet10 Portuguese
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json')
+          cfg=json.loads(p.read_text(encoding='utf-8'))
+          overrides={
+            'CONFIG_USE_DEVICE_AEC':'n',
+            'CONFIG_USE_SERVER_AEC':'n',
+            'CONFIG_WAKE_WORD_DISABLED':'n',
+            'CONFIG_USE_AFE_WAKE_WORD':'y',
+            'CONFIG_USE_CUSTOM_WAKE_WORD':'n',
+            'CONFIG_USE_ESP_WAKE_WORD':'n',
+            'CONFIG_WAKE_WORD_DETECTION_IN_LISTENING':'n',
+            'CONFIG_SEND_WAKE_WORD_DATA':'y',
+            'CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS':'n',
+            'CONFIG_SR_WN_WN10_PT_OLAESP':'y',
+            'CONFIG_SR_MN_CN_NONE':'y',
+            'CONFIG_SR_MN_EN_NONE':'y'}
+          opts=cfg['builds'][0]['sdkconfig_append']
+          cfg['builds'][0]['sdkconfig_append']=[o for o in opts if o.split('=')[0] not in overrides]+[f'{k}={v}' for k,v in overrides.items()]
+          p.write_text(json.dumps(cfg,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+      - name: Validate safe SD code
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc').read_text()
+          for marker in ('format_if_mount_failed = false', 'slot.width = 1',
+                         'slot.clk = GPIO_NUM_16', 'slot.cmd = GPIO_NUM_15',
+                         'slot.d0 = GPIO_NUM_17', '/sdcard/LUMI/boot.log',
+                         'self.sdcard.get_status'):
+            assert marker in source, marker
+          print("SD diagnostics code: no autoformat and 1-bit interface")
+          PY
+      - name: Build firmware and matching model
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+      - name: Validate and package
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          cfg=Path('sdkconfig').read_text()
+          for s in ('CONFIG_USE_AFE_WAKE_WORD=y','CONFIG_SR_WN_WN10_PT_OLAESP=y','CONFIG_LANGUAGE_PT_PT=y','# CONFIG_USE_CUSTOM_WAKE_WORD is not set'):
+            assert s in cfg.splitlines(),s
+          fw=Path('build/xiaozhi.bin').read_bytes()
+          assets=Path('build/generated_assets.bin').read_bytes()
+          assert fw[0]==0xe9 and 100000<len(fw)<0x3f0000
+          assert b'wn10_pt_olaesp' in assets and 12<len(assets)<0x800000
+          manifest={'format':'lumi-windows-experimental-v1','sd_support':'optional_nonformatting_diagnostics','sd_mount':'/sdcard','sd_1bit':True,'board':'waveshare/esp32-s3-touch-lcd-1.54','chip':'esp32s3','sr_version':'2.6.1','wake_word':'Olá ESP','wake_model':'wn10_pt_olaesp','wake_word_lumi_ready':False,'flash_size':16777216,'firmware':{'name':'firmware.bin','sha256':hashlib.sha256(fw).hexdigest(),'size':len(fw)},'model_assets':{'name':'model-assets.bin','sha256':hashlib.sha256(assets).hexdigest(),'size':len(assets)},'assets_policy':'merge-only-srmodels-preserving-existing-fonts-and-emojis'}
+          with ZipFile('LUMI-V6-SD-WakeNet10-Experimental.zip','w',ZIP_DEFLATED,compresslevel=6) as z:
+            z.writestr('manifest.json',json.dumps(manifest,indent=2,ensure_ascii=False))
+            z.writestr('firmware.bin',fw)
+            z.writestr('model-assets.bin',assets)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-V6-SD-WakeNet10-Experimental
+          path: LUMI-V6-SD-WakeNet10-Experimental.zip
+          retention-days: 30
+      - name: Publish opt-in experimental release
+        if: github.event_name == 'workflow_dispatch' && false
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-wakenet10-pt-test
+          target_commitish: ${{ github.sha }}
+          name: LUMI WakeNet10 PT experimental
+          prerelease: true
+          make_latest: false
+          files: LUMI-V6-SD-WakeNet10-Experimental.zip
+          fail_on_unmatched_files: true
+          overwrite_files: true

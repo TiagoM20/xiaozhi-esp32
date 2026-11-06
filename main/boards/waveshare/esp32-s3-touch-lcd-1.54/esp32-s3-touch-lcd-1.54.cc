@@ -16,6 +16,15 @@
 #include <esp_lcd_panel_ops.h>
 
 #include <esp_timer.h>
+#include <esp_system.h>
+#include <esp_err.h>
+#include <esp_vfs_fat.h>
+#include <driver/sdmmc_host.h>
+#include <sdmmc_cmd.h>
+#include <sys/stat.h>
+#include <cerrno>
+#include <cstdio>
+#include <string>
 
 #include "power_save_timer.h"
 #include "assets/lang_config.h"
@@ -60,6 +69,56 @@ private:
     LcdDisplay* display_;
     PowerManager* power_manager_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
+    // Optional on-board microSD: diagnostics only, never required for boot.
+    sdmmc_card_t* sd_card_ = nullptr;
+    bool sd_mounted_ = false;
+
+    void InitializeSdCard() {
+        // Waveshare ESP32-S3-Touch-LCD-1.54 SDMMC pins.
+        // Start with 1-bit mode and 10MHz to minimize boot-time I/O load.
+        // Do not format or erase any user's card automatically.
+        sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+        host.max_freq_khz = 10000;
+        sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+        slot.width = 1;
+        slot.clk = GPIO_NUM_16;
+        slot.cmd = GPIO_NUM_15;
+        slot.d0 = GPIO_NUM_17;
+
+        esp_vfs_fat_mount_config_t mount_cfg = {};
+        mount_cfg.format_if_mount_failed = false;
+        mount_cfg.max_files = 4;
+        mount_cfg.allocation_unit_size = 16 * 1024;
+
+        const esp_err_t err = esp_vfs_fat_sdmmc_mount(
+            "/sdcard", &host, &slot, &mount_cfg, &sd_card_);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "LUMI SD: no usable FAT card (err=%s), continuing normally",
+                     esp_err_to_name(err));
+            sd_mounted_ = false;
+            sd_card_ = nullptr;
+            return;
+        }
+
+        sd_mounted_ = true;
+        ESP_LOGI(TAG, "LUMI SD: mounted /sdcard, capacity=%llu MB",
+                 (unsigned long long)((uint64_t)sd_card_->csd.capacity *
+                    sd_card_->csd.sector_size / (1024 * 1024)));
+        if (mkdir("/sdcard/LUMI", 0755) != 0 && errno != EEXIST) {
+            ESP_LOGW(TAG, "LUMI SD: could not create /sdcard/LUMI");
+            return;
+        }
+
+        // One diagnostic line per boot, not a continuous microphone recording.
+        // Do not store user conversations or passwords on the card.
+        FILE* log = fopen("/sdcard/LUMI/boot.log", "a");
+        if (log != nullptr) {
+            fprintf(log, "boot reset_reason=%d firmware_sd=V6_WAKE_PT\n", (int)esp_reset_reason());
+            fclose(log);
+        } else {
+            ESP_LOGW(TAG, "LUMI SD: could not write boot.log");
+        }
+    }
 
     void InitializePowerManager() {
         power_manager_ = new PowerManager(BATTERY_CHARGING_PIN, BATTERY_ADC_PIN, BATTERY_EN_PIN);
@@ -274,6 +333,12 @@ private:
     // 初始化工具
     void InitializeTools() {
         auto &mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.sdcard.get_status",
+            "Check optional microSD storage for LUMI diagnostics without formatting it.",
+            PropertyList(), [this](const PropertyList&) -> std::string {
+                return sd_mounted_ ? "microSD mounted at /sdcard; diagnostics at /sdcard/LUMI/boot.log"
+                                   : "microSD unavailable or not formatted as FAT32; WakeNet and other functions continue normally";
+            });
         mcp_server.AddTool("self.system.reconfigure_wifi",
             "Reboot the device and enter WiFi configuration mode.\n"
             "**CAUTION** You must ask the user to confirm this action.",
@@ -295,6 +360,7 @@ public:
         InitializeLcdDisplay();
         InitializeTouch();
         InitializeButtons();
+        InitializeSdCard();
         InitializeTools();
         GetBacklight()->RestoreBrightness();
     }

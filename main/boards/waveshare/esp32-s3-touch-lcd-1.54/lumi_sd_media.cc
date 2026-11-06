@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cctype>
+#include <new>
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
@@ -23,7 +25,7 @@
 #include "audio_service.h"
 #include "board.h"
 #include "device_state.h"
-#include "lang_config.h"
+#include "assets/lang_config.h"
 #include "lvgl_image.h"
 #include "ogg_demuxer.h"
 

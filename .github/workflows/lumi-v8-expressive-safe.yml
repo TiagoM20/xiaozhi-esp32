@@ -1,0 +1,114 @@
+name: LUMI V8 — Expressive DESK (build only, DO NOT FLASH)
+on:
+  workflow_dispatch:
+  push:
+    branches: [lumi/v8-expressive-safe-20261109]
+    paths:
+      - '.github/workflows/lumi-v8-expressive-safe.yml'
+      - 'main/boards/waveshare/esp32-s3-touch-lcd-1.54/**'
+      - 'main/CMakeLists.txt'
+      - 'main/idf_component.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep the previously working single wake model
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json')
+          cfg=json.loads(p.read_text(encoding='utf-8'))
+          overrides={
+             'CONFIG_USE_DEVICE_AEC':'n',
+             'CONFIG_USE_SERVER_AEC':'n',
+             'CONFIG_WAKE_WORD_DISABLED':'n',
+             'CONFIG_USE_AFE_WAKE_WORD':'y',
+             'CONFIG_USE_CUSTOM_WAKE_WORD':'n',
+             'CONFIG_USE_ESP_WAKE_WORD':'n',
+             'CONFIG_WAKE_WORD_DETECTION_IN_LISTENING':'n',
+             'CONFIG_SEND_WAKE_WORD_DATA':'y',
+             'CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS':'n',
+             'CONFIG_SR_WN_WN10_PT_OLAESP':'y',
+             'CONFIG_SR_MN_CN_NONE':'y',
+             'CONFIG_SR_MN_EN_NONE':'y',
+          }
+          opts=cfg['builds'][0]['sdkconfig_append']
+          cfg['builds'][0]['sdkconfig_append']=[o for o in opts if o.split('=')[0] not in overrides]+[f'{k}={v}' for k,v in overrides.items()]
+          p.write_text(json.dumps(cfg,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+      - name: Check safety constraints (before build)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('main/boards/waveshare/esp32-s3-touch-lcd-1.54')
+          board=(p/'esp32-s3-touch-lcd-1.54.cc').read_text()
+          face=(p/'lumi_expressive_display.h').read_text()
+          assert 'new LumiExpressiveDisplay' in board
+          assert 'self.lumi.face.set_color' in board
+          assert 'self.lumi.face.set_enabled' in board
+          assert 'self.lumi.capabilities' in board
+          assert 'wn10_pt_olaesp' not in face
+          assert 'esp_vfs_fat_sdmmc_mount' not in board
+          assert 'InitializeSdCard' not in board
+          assert 'SetFaceEnabled' in face
+          assert 'lv_timer_create' in face
+          assert 'Lumi' not in (p/'config.json').read_text()
+          print('V8: no boot SD, no dual wake, no custom model claim; revert via MCP.')
+          PY
+      - name: Build matching XiaoZhi image
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+      - name: Validate and package (not installable via LUMI CORE)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          cfg=Path('sdkconfig').read_text().splitlines()
+          for line in ('CONFIG_USE_AFE_WAKE_WORD=y','CONFIG_SR_WN_WN10_PT_OLAESP=y','CONFIG_LANGUAGE_PT_PT=y','# CONFIG_USE_CUSTOM_WAKE_WORD is not set'):
+              assert line in cfg,line
+          fw=Path('build/xiaozhi.bin').read_bytes()
+          assets=Path('build/generated_assets.bin').read_bytes()
+          assert fw[0]==0xe9 and 100000<len(fw)<0x3f0000
+          assert b'wn10_pt_olaesp' in assets and 12<len(assets)<0x800000
+          manifest={
+            'format':'lumi-v8-build-only',
+            'safe_to_flash':False,
+            'reason':'Requires device-specific assets/layout compatibility and full 16MiB rollback validation; boot not hardware-tested.',
+            'base':'lumi/wakenet10-pt-test-261',
+            'board':'waveshare/esp32-s3-touch-lcd-1.54',
+            'chip':'esp32s3',
+            'features':['new_lvgl_face_no_iris','7_face_colours_persisted','mcp_face_tools','toggle_legacy_emoji_fallback'],
+            'wake_model':'wn10_pt_olaesp',
+            'wake_word':'Olá ESP',
+            'lumi_custom_wake_word_ready':False,
+            'esp_claw_agent_installed':False,
+            'agent':'XiaoZhi server LLM + MCP tools, no local autonomous agent',
+            'sd_media_added':False,
+            'firmware':{'name':'firmware-DO-NOT-FLASH.bin','sha256':hashlib.sha256(fw).hexdigest(),'size':len(fw)},
+            'assets':{'name':'model-assets-DO-NOT-FLASH.bin','sha256':hashlib.sha256(assets).hexdigest(),'size':len(assets)}
+          }
+          with ZipFile('LUMI-V8-EXPRESSIVE-BUILD-ONLY-NAO-INSTALAR.zip','w',ZIP_DEFLATED,compresslevel=6) as z:
+              z.writestr('manifest.json',json.dumps(manifest,indent=2,ensure_ascii=False))
+              z.writestr('firmware-DO-NOT-FLASH.bin',fw)
+              z.writestr('model-assets-DO-NOT-FLASH.bin',assets)
+              z.writestr('NAO_INSTALAR.txt','Build de compilação, NÃO instalar na WAVESHARE. Confirmar compatibilidade de partições, assets e rollback antes de qualquer flash.\n')
+          print('V8 build compiled and packaged for inspection only')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-V8-EXPRESSIVE-BUILD-ONLY-NAO-INSTALAR
+          path: LUMI-V8-EXPRESSIVE-BUILD-ONLY-NAO-INSTALAR.zip
+          retention-days: 30

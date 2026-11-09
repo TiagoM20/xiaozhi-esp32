@@ -497,6 +497,235 @@ public final class MainActivity extends Activity {
         return getSharedPreferences("hub",MODE_PRIVATE)
             .getString("lg_last_status","Por verificar");
     }
+
+    /** V16: dashboard nativo integrado nos dados já existentes da casa. */
+    private void drawDashboardV16() {
+        RebordosaWeather.refreshIfNeeded(this, ()->{
+            if(!isFinishing() && "Casa".equals(page))draw();
+        });
+        LinearLayout hero=panel();
+        LinearLayout head=horizontal();
+        LinearLayout name=vertical();
+        name.addView(label("CASA",23,WHITE,true));
+        add(name,label(date("EEEE, d 'de' MMMM"),12,MUTED,false),3);
+        addWeighted(head,name,1,0);
+        TextClock time=new TextClock(this);
+        time.setFormat12Hour("HH:mm");time.setFormat24Hour("HH:mm");
+        time.setTextColor(CYAN);time.setTextSize(28);
+        head.addView(time);hero.addView(head);
+        RebordosaWeather.State weather=RebordosaWeather.read(this);
+        add(hero,label(weather.icon+"  "+weather.temperature+"  ·  "+weather.condition,
+            17,WHITE,false),15);
+        add(hero,label("LUMI MCP · "+mcpStatus(),12,
+            mcpStatus().startsWith("Ligado")?GREEN:GOLD,false),10);
+        add(hero,label("Home Assistant · "+(HomeAssistantClient.isConfigured(this)?
+            "Configurado":"Por configurar"),12,
+            HomeAssistantClient.isConfigured(this)?GREEN:MUTED,false),5);
+        add(stage,hero,2);
+
+        LinearLayout quick=horizontal();
+        addWeighted(quick,button("⌂  Divisões",true,()->{page="Divisões";draw();}),1,0);
+        addWeighted(quick,button("◉  LUMI DESK",false,()->{page="LUMI DESK";draw();}),1,8);
+        add(stage,quick,11);
+
+        LinearLayout fav=panel();
+        LinearLayout top=horizontal();
+        addWeighted(top,label("Favoritos",19,WHITE,true),1,0);
+        top.addView(button("Ver todos",false,()->{page="Dispositivos";draw();}));
+        fav.addView(top);
+        java.util.List<DeviceRegistry.Device> devices=DeviceRegistry.all(this);
+        java.util.List<DeviceRegistry.Device> favourites=new java.util.ArrayList<>();
+        for(DeviceRegistry.Device d:devices)if(d.favorite)favourites.add(d);
+        if(favourites.isEmpty()){
+            add(fav,label("Escolhe os dispositivos que queres aqui.",12,MUTED,false),9);
+            add(fav,button("Adicionar dispositivo",false,this::addDeviceMenu),9);
+        }else{
+            GridLayout grid=new GridLayout(this);
+            int cols=landscape()?Math.min(4,Math.max(1,favourites.size())):2;
+            grid.setColumnCount(cols);
+            for(int i=0;i<favourites.size();i++)
+                addDeviceTile(grid,favourites.get(i),i,cols);
+            add(fav,grid,10);
+        }
+        add(stage,fav,12);
+
+        LinearLayout actions=panel();
+        actions.addView(label("Ações rápidas",19,WHITE,true));
+        LinearLayout row=horizontal();
+        addWeighted(row,button("☾  Apagar luzes",false,
+            ()->confirmLightsV16(false)),1,0);
+        addWeighted(row,button("↻  Rotinas",false,
+            ()->{page="Rotinas";draw();}),1,8);
+        add(actions,row,10);
+        if(!HomeAssistantClient.isConfigured(this))
+            add(actions,label("Associa o Home Assistant para controlar as luzes.",
+                12,MUTED,false),8);
+        add(stage,actions,12);
+
+        LinearLayout ha=panel();
+        ha.addView(label("A casa agora",19,WHITE,true));
+        add(ha,button("Abrir Home Assistant",false,this::openHomeAssistant),8);
+        if(HomeAssistantClient.isConfigured(this))appendHaSnapshot(ha,false,6);
+        else add(ha,label("Sem servidor associado.",12,MUTED,false),8);
+        add(stage,ha,12);
+
+        LinearLayout extras=horizontal();
+        addWeighted(extras,button("Pessoas",false,()->{page="Pessoas";draw();}),1,0);
+        addWeighted(extras,button("Planta",false,()->{page="Planta";draw();}),1,8);
+        add(stage,extras,12);
+    }
+
+    private void drawRoomsV16() {
+        heading("Divisões","");
+        java.util.List<DeviceRegistry.Device> devices=DeviceRegistry.all(this);
+        for(String room:DeviceRegistry.ROOMS){
+            int count=0;
+            for(DeviceRegistry.Device d:devices)if(room.equals(d.room))count++;
+            if(count==0 && !"Sala".equals(room) && !"Cozinha".equals(room)
+                && !"Quarto".equals(room) && !"Escritório".equals(room))continue;
+            LinearLayout card=panel();
+            LinearLayout title=horizontal();
+            addWeighted(title,label(room,19,WHITE,true),1,0);
+            title.addView(label(count+" dispositivo(s)",12,CYAN,false));
+            card.addView(title);
+            for(DeviceRegistry.Device d:devices)
+                if(room.equals(d.room))
+                    add(card,button(d.name,false,()->openRegistered(d)),8);
+            if(HomeAssistantClient.isConfigured(this))
+                add(card,button("Ver no Home Assistant",false,
+                    ()->openHaEntity("",room)),9);
+            else if(count==0)
+                add(card,label("Ainda sem dispositivos.",12,MUTED,false),8);
+            add(stage,card,11);
+        }
+        add(stage,button("+ Adicionar equipamento",true,this::addDeviceMenu),13);
+    }
+
+    private void drawRoutinesV16() {
+        heading("Rotinas","");
+        LinearLayout card=panel();
+        card.addView(label("Iluminação",19,WHITE,true));
+        if(HomeAssistantClient.isConfigured(this)){
+            add(card,button("☾  Apagar todas as luzes",true,
+                ()->confirmLightsV16(false)),12);
+            add(card,button("☀  Acender todas as luzes",false,
+                ()->confirmLightsV16(true)),8);
+            add(card,label("Controlo real via Home Assistant, com confirmação.",
+                12,MUTED,false),8);
+        }else{
+            add(card,label("Configura o Home Assistant para ativar rotinas da casa.",
+                13,MUTED,false),10);
+            add(card,button("Ligar Home Assistant",true,this::openHomeAssistant),10);
+        }
+        add(stage,card,10);
+        LinearLayout tools=panel();
+        tools.addView(label("Acessos diretos",18,WHITE,true));
+        add(tools,button("Gerir dispositivos",false,
+            ()->{page="Dispositivos";draw();}),10);
+        add(tools,button("Configurar ligação MCP",false,this::mcpSettings),8);
+        add(stage,tools,12);
+    }
+
+    /** Nunca executa a rotina sem toque e confirmação explícitos. */
+    private void confirmLightsV16(boolean turnOn) {
+        if(!HomeAssistantClient.isConfigured(this)){
+            notice("Home Assistant","Configura primeiro a integração.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle((turnOn?"Acender":"Apagar")+" todas as luzes?")
+            .setMessage("Esta ação controla luzes reais no Home Assistant. "
+                +"Tomadas, alarmes, televisões e fechaduras não são afetados.")
+            .setNegativeButton("Cancelar",null)
+            .setPositiveButton("Confirmar",(d,w)->{
+                final String base=HomeAssistantClient.base(this);
+                final String token=HomeAssistantClient.token(this);
+                new Thread(()->{
+                    int ok=0,errors=0;
+                    try{
+                        java.util.List<HomeAssistantClient.Entity> list=
+                            HomeAssistantClient.states(base,token);
+                        int seen=0;
+                        for(HomeAssistantClient.Entity light:list){
+                            if(!"light".equals(light.domain)||!light.available)continue;
+                            if(++seen>50)break;
+                            if(turnOn && "on".equals(light.state))continue;
+                            if(!turnOn && "off".equals(light.state))continue;
+                            try{
+                                HomeAssistantClient.command(base,token,light,
+                                    turnOn?"turn_on":"turn_off");
+                                ok++;
+                            }catch(Exception ex){errors++;}
+                        }
+                        final String summary=ok+" luz(es) alterada(s)"
+                            +(errors>0?" · "+errors+" falha(s)":"");
+                        runOnUiThread(()->notice("Rotina concluída",summary));
+                    }catch(Exception error){
+                        final String failure=error.getMessage();
+                        runOnUiThread(()->notice("Rotina não executada",failure));
+                    }
+                }).start();
+            }).show();
+    }
+
+    /** Rosto desenhado na app: cores não enviadas à Waveshare. */
+    private void addLumiFaceV16() {
+        SharedPreferences prefs=getSharedPreferences("hub",MODE_PRIVATE);
+        int color=Math.max(0,Math.min(
+            prefs.getInt("lumi_face_color_v16",0),
+            LumiFacePreviewView.PALETTES.length-1));
+        int mood=Math.max(0,Math.min(
+            prefs.getInt("lumi_face_mood_v16",0),
+            LumiFacePreviewView.MOODS.length-1));
+        LinearLayout card=panel();
+        card.addView(label("Rosto · Pré-visualização",18,WHITE,true));
+        LumiFacePreviewView face=new LumiFacePreviewView(this);
+        face.setPalette(color);face.setMood(mood);
+        LinearLayout.LayoutParams faceLp=new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,dp(landscape()?216:225));
+        faceLp.topMargin=dp(10);
+        card.addView(face,faceLp);
+        add(card,label("As mudanças ficam no HUB; o ecrã físico da DESK não muda.",
+            12,GOLD,false),10);
+        add(card,label("Cor",14,WHITE,true),12);
+        GridLayout colors=new GridLayout(this);
+        colors.setColumnCount(landscape()?7:4);
+        for(int i=0;i<LumiFacePreviewView.PALETTES.length;i++){
+            final int index=i;
+            TextView option=label(LumiFacePreviewView.PALETTE_NAMES[i],11,
+                Color.rgb(9,18,32),true);
+            option.setGravity(Gravity.CENTER);
+            option.setPadding(dp(4),dp(9),dp(4),dp(9));
+            option.setBackground(borderFill(LumiFacePreviewView.PALETTES[i],
+                10,i==color?WHITE:LumiFacePreviewView.PALETTES[i]));
+            option.setOnClickListener(v->{
+                prefs.edit().putInt("lumi_face_color_v16",index).apply();
+                face.setPalette(index);draw();
+            });
+            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
+            lp.width=dp(landscape()?88:79);lp.height=dp(43);
+            lp.setMargins(dp(3),dp(3),dp(3),dp(3));
+            colors.addView(option,lp);
+        }
+        add(card,colors,8);
+        add(card,label("Expressão",14,WHITE,true),12);
+        GridLayout moods=new GridLayout(this);
+        moods.setColumnCount(landscape()?5:3);
+        for(int i=0;i<LumiFacePreviewView.MOODS.length;i++){
+            final int index=i;
+            Button option=button(LumiFacePreviewView.MOODS[i],i==mood,()->{
+                prefs.edit().putInt("lumi_face_mood_v16",index).apply();
+                face.setMood(index);draw();
+            });
+            GridLayout.LayoutParams lp=new GridLayout.LayoutParams();
+            lp.width=dp(landscape()?122:99);
+            lp.setMargins(dp(3),dp(3),dp(3),dp(3));
+            moods.addView(option,lp);
+        }
+        add(card,moods,8);
+        add(stage,card,12);
+    }
+
     private void drawStation() {
         // A meteorologia actualiza o cartao sem alterar a configuracao.
         RebordosaWeather.refreshIfNeeded(this, () -> {

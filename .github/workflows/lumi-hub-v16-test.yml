@@ -7,7 +7,7 @@ on:
       - 'lumi-hub-android/**'
       - '.github/workflows/lumi-hub-v16-test.yml'
 permissions:
-  contents: read
+  contents: write
 jobs:
   android-test:
     runs-on: ubuntu-latest
@@ -61,3 +61,24 @@ jobs:
           name: LUMI-HUB-V16-TESTE-ASSINADO
           path: LUMI-HUB-V16-TESTE-ASSINADO.apk
           retention-days: 30
+
+      - name: Publicar atualização opcional V16 na aplicação
+        if: env.LUMI_HAS_SIGNING == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-hub-v0.16.0
+          target_commitish: ${{ github.sha }}
+          name: LUMI HUB V16 — Centro Inteligente (teste)
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: LUMI-HUB-V16-TESTE-ASSINADO.apk
+          body: |
+            V16 experimental. Atualização da app Android com a mesma assinatura do HUB.
+            Reorganiza Casa, Divisões, Dispositivos, LUMI DESK e Rotinas.
+            Inclui ecrã local de pré-visualização da cara da DESK com 7 cores, sem íris.
+            O ecrã físico da DESK não é alterado por esta atualização.
+            Mantém a integração existente com LG webOS, MCP e Home Assistant.
+            Há uma opção em Definições para regressar ao painel V15.
+            Android Tab 15. Não desinstalar a aplicação existente.
+            Antes de instalar, fazer cópia de dados importantes; testar em ambiente real.

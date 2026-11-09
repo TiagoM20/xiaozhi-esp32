@@ -247,6 +247,15 @@ private:
             GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
         });
 
+        // Fallback without Wi-Fi, voice, MCP or computer: two presses on volume-up.
+        // Restores old XiaoZhi emoji face; repeat to re-enable expressive face.
+        volume_up_button_.OnDoubleClick([this]() {
+            auto* face = static_cast<LumiExpressiveDisplay*>(display_);
+            bool next = !face->FaceEnabled();
+            face->SetFaceEnabled(next);
+            GetDisplay()->ShowNotification(next ? "Rosto LUMI ativo" : "Emojis anteriores");
+        });
+
         volume_down_button_.OnClick([this]() {
             auto codec = Board::GetInstance().GetAudioCodec();
             auto volume = codec->output_volume() - 10;

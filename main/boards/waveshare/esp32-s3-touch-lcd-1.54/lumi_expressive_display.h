@@ -20,7 +20,7 @@ public:
                           bool mirror_x, bool mirror_y, bool swap_xy)
         : SpiLcdDisplay(io, panel, width, height, ox, oy, mirror_x, mirror_y, swap_xy) {
         Settings saved("lumi_face");
-        color_index_ = std::clamp(saved.GetInt("color", 0), 0, 6);
+        color_index_ = std::clamp(static_cast<int>(saved.GetInt("color", 0)), 0, 6);
         active_ = saved.GetBool("enabled", true);
     }
 

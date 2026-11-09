@@ -66,7 +66,7 @@ public final class MainActivity extends Activity {
     private static int STROKE = Color.rgb(52, 64, 85);
     private static final Locale PT = new Locale("pt", "PT");
 
-    private final String[] navItems = {"Casa", "Dispositivos", "Lumi"};
+    private final String[] navItems = {"Casa", "Divisões", "Dispositivos", "LUMI DESK", "Rotinas"};
     private String page = "Casa";
     private String activeDevice = "tv";
     private String selectedRegisteredDeviceId="";
@@ -336,13 +336,16 @@ public final class MainActivity extends Activity {
         stage.setPadding(dp(landscape()?17:14), dp(landscape()?12:13),
             dp(landscape()?17:14), dp(20));
         scroll.addView(stage);
-        if ("Dispositivos".equals(page)) drawDevices();
-        else if ("Lumi".equals(page)) drawLumi();
+        if ("Divisões".equals(page)) drawRoomsV16();
+        else if ("Rotinas".equals(page)) drawRoutinesV16();
+        else if ("Dispositivos".equals(page)) drawDevices();
+        else if ("LUMI DESK".equals(page)) drawLumi();
         else if ("Biblioteca".equals(page)) drawLibrary();
         else if ("Pessoas".equals(page)) drawPeople();
         else if ("Planta".equals(page)) drawFloorplan();
         else if ("Definições".equals(page)) drawSettings();
         else if ("Atualizações".equals(page)) drawUpdates();
+        else if (getSharedPreferences("hub", MODE_PRIVATE).getBoolean("hub_v16_dashboard", true)) drawDashboardV16();
         else drawStation();
         if (!landscape()) bottomNavigation(root);
     }
@@ -399,7 +402,7 @@ public final class MainActivity extends Activity {
         TextView lumi = label("LUMI", 12, WHITE, true);
         lumi.setGravity(Gravity.CENTER);
         add(sidebar, lumi, 4);
-        String[] symbols = {"⌂", "▦", "◉"};
+        String[] symbols = {"⌂", "▦", "◇", "◉", "↻"};
         for (int i = 0; i < navItems.length; i++) {
             final String name = navItems[i];
             boolean selected = name.equals(page);
@@ -426,7 +429,7 @@ public final class MainActivity extends Activity {
         bar.setPadding(dp(10), dp(9), dp(10), dp(13));
         for (String name : navItems) {
             boolean selected = name.equals(page);
-            TextView nav = label(name, landscape() ? 14 : 12,
+            TextView nav = label(name, landscape() ? 14 : 10,
                 selected ? CYAN : MUTED, selected);
             nav.setGravity(Gravity.CENTER);
             nav.setPadding(dp(4), dp(13), dp(4), dp(13));
@@ -861,7 +864,8 @@ public final class MainActivity extends Activity {
 
 
     private void drawLumi() {
-        heading("Lumi","O essencial para a tua assistente.");
+        heading("LUMI DESK","Voz · Rosto · Biblioteca · CORE");
+        addLumiFaceV16();
         LinearLayout info=panel();
         info.addView(label("LUMI DESK  ·  ESP32-S3",20,WHITE,true));
         add(info,label("Raquel PT-PT · Agente XiaoZhi",14,CYAN,true),7);
@@ -923,7 +927,7 @@ public final class MainActivity extends Activity {
         }
         add(stage,tabs,12);
         add(stage,button("‹  Voltar à LUMI DESK",false,()->{
-            page="Lumi";draw();
+            page="LUMI DESK";draw();
         }),8);
         if("Memórias".equals(libraryTab)){
             drawMemories();
@@ -1217,7 +1221,15 @@ public final class MainActivity extends Activity {
     }
 
     private void drawSettings() {
-        heading("Definições","Ligações, atualizações e manutenção.");
+        heading("Definições","Casa, ligações e aparência.");
+        LinearLayout displayMode=panel();
+        displayMode.addView(label("Painel inicial",18,WHITE,true));
+        boolean modern=getSharedPreferences("hub",MODE_PRIVATE).getBoolean("hub_v16_dashboard",true);
+        add(displayMode,button(modern?"Usar painel anterior (V15)":"Ativar novo painel V16",false,()->{
+            getSharedPreferences("hub",MODE_PRIVATE).edit().putBoolean("hub_v16_dashboard",!modern).apply();
+            page="Casa";draw();
+        }),9);
+        add(stage,displayMode,9);
         LinearLayout updates=panel();
         updates.addView(label("Atualizações do HUB",18,WHITE,true));
         add(updates,label("Versões assinadas, testes e histórico.",13,MUTED,false),6);

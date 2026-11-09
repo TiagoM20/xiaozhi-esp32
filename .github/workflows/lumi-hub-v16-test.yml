@@ -1,0 +1,63 @@
+name: LUMI HUB V16 CI
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lumi-hub-v16-android-restructure-20261109]
+    paths:
+      - 'lumi-hub-android/**'
+      - '.github/workflows/lumi-hub-v16-test.yml'
+permissions:
+  contents: read
+jobs:
+  android-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK debug
+        shell: bash
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          gradle -p lumi-hub-android :app:assembleDebug --no-daemon --stacktrace
+          test -s lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HUB-V16-DEBUG-TESTE
+          path: lumi-hub-android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+      - name: Preparar assinatura persistente
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMI_SIGNING_JKS_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMI_SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/lumi-release.jks"
+            echo "LUMI_RELEASE_KEYSTORE=$RUNNER_TEMP/lumi-release.jks" >> "$GITHUB_ENV"
+            echo "LUMI_RELEASE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "LUMI_HAS_SIGNING=true" >> "$GITHUB_ENV"
+          else
+            echo "LUMI_HAS_SIGNING=false" >> "$GITHUB_ENV"
+          fi
+      - name: Build signed APK
+        if: env.LUMI_HAS_SIGNING == 'true'
+        run: gradle -p lumi-hub-android :app:assembleRelease --no-daemon --stacktrace
+      - name: Verify signed APK
+        if: env.LUMI_HAS_SIGNING == 'true'
+        run: |
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose lumi-hub-android/app/build/outputs/apk/release/app-release.apk
+          cp lumi-hub-android/app/build/outputs/apk/release/app-release.apk LUMI-HUB-V16-TESTE-ASSINADO.apk
+      - uses: actions/upload-artifact@v4
+        if: env.LUMI_HAS_SIGNING == 'true'
+        with:
+          name: LUMI-HUB-V16-TESTE-ASSINADO
+          path: LUMI-HUB-V16-TESTE-ASSINADO.apk
+          retention-days: 30

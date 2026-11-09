@@ -1,6 +1,7 @@
 #include "wifi_board.h"
 #include "codecs/box_audio_codec.h"
 #include "display/lcd_display.h"
+#include "lumi_expressive_display.h"
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
@@ -190,7 +191,7 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
         
-        display_ = new SpiLcdDisplay(panel_io, panel,
+        display_ = new LumiExpressiveDisplay(panel_io, panel,
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY
                                     );
     }
@@ -280,6 +281,60 @@ private:
             PropertyList(), [this](const PropertyList& properties) {
                 EnterWifiConfigMode();
                 return true;
+            });
+
+        // LUMI V8: local, bounded, non-destructive MCP tools.
+        // The LLM continues running via the configured XiaoZhi service;
+        // these are actions, not an on-device LLM or ESP-Claw installation.
+        auto* face = static_cast<LumiExpressiveDisplay*>(display_);
+        mcp_server.AddTool("self.lumi.face.set_color",
+            "Choose LUMI's physical LCD face colour: 0 cyan, 1 pink, "
+            "2 violet, 3 amber, 4 green, 5 ice, 6 coral. "
+            "The setting is stored locally and survives reboot.",
+            PropertyList({Property("color", kPropertyTypeInteger, 0, 6)}),
+            [face](const PropertyList& args) -> ReturnValue {
+                return face->SetFaceColor(args["color"].value<int>());
+            });
+
+        mcp_server.AddTool("self.lumi.face.set_enabled",
+            "Enable or disable LUMI V8 expressive LCD. Disable to restore "
+            "the previous GIF/emoji face without flashing firmware.",
+            PropertyList({Property("enabled", kPropertyTypeBoolean)}),
+            [face](const PropertyList& args) -> ReturnValue {
+                face->SetFaceEnabled(args["enabled"].value<bool>());
+                return true;
+            });
+
+        mcp_server.AddTool("self.lumi.face.react",
+            "Show an on-screen expression. Accepted: neutral, happy, "
+            "surprised, confused, sleepy, thinking, listening, speaking, "
+            "excited. Changes only the face, not the voice or Home Assistant.",
+            PropertyList({Property("emotion", kPropertyTypeString)}),
+            [face](const PropertyList& args) -> ReturnValue {
+                const auto& emotion = args["emotion"].value<std::string>();
+                const char* allowed[] = {"neutral", "happy", "surprised",
+                    "confused", "sleepy", "thinking", "listening",
+                    "speaking", "excited"};
+                bool valid = false;
+                for (const auto* entry : allowed) {
+                    if (emotion == entry) { valid = true; break; }
+                }
+                if (!valid) return false;
+                face->SetEmotion(emotion.c_str());
+                return true;
+            });
+
+        mcp_server.AddTool("self.lumi.capabilities",
+            "Read-only facts about this LUMI V8 experiment and its limits.",
+            PropertyList(), [face](const PropertyList&) -> ReturnValue {
+                return std::string("LUMI DESK V8 expressive; ")
+                    + "face=" + (face->FaceEnabled() ? "on" : "fallback")
+                    + "; palette=" + std::to_string(face->FaceColor())
+                    + "; wakeword=Ola ESP (WakeNet10); "
+                    + "LUMI custom wakeword NOT installed; "
+                    + "agent=XiaoZhi remote LLM and MCP tools; "
+                    + "ESP-Claw autonomous agent NOT installed; "
+                    + "SD multimedia NOT installed.";
             });
     }
 

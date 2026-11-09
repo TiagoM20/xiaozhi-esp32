@@ -352,6 +352,9 @@ public:
         pwr_button_(PWR_BUTTON_GPIO),
         volume_up_button_(VOLUME_UP_BUTTON_GPIO),
         volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
+        ESP_LOGI(TAG, "LUMI V8 boot: reset_reason=%d free_heap=%u",
+                 static_cast<int>(esp_reset_reason()),
+                 static_cast<unsigned int>(esp_get_free_heap_size()));
         InitializePowerManager();
         InitializePowerSaveTimer();
         InitializeI2c();

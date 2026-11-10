@@ -63,6 +63,16 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
     frame_samples_ = frame_duration_ms * 16000 / 1000;
     output_buffer_.reserve(frame_samples_);
 
+    // FACE-ONLY PREVIEW: do not create AFE or wake detector.
+    // WakeNet10 is the crash site in the V8 hardware trace.
+    // Voice remains available only through the manual button; no "Ola ESP".
+    // This is deliberately a separate experimental branch, not a stable release.
+    ESP_LOGW(TAG, "LUMI FACE PREVIEW: WakeNet and AFE disabled, use physical button to speak");
+    wake_detector_ = WakeDetector::kNone;
+    models_ = nullptr;
+    owns_models_ = false;
+    return true;
+
     if (models_list == nullptr) {
         models_ = esp_srmodel_init("model");
         owns_models_ = models_ != nullptr;

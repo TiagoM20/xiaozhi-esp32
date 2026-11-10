@@ -2,6 +2,7 @@
 #include "codecs/box_audio_codec.h"
 #include "display/lcd_display.h"
 #include "lumi_expressive_display.h"
+#include "lumi_heap_diagnostic.h"
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
@@ -31,6 +32,9 @@
 #include "esp_ota_ops.h"
 
 #define TAG "waveshare_esp32_s3_touch_lcd_1_54"
+#ifndef LUMI_DIAG_FACE
+#define LUMI_DIAG_FACE 1
+#endif
 
 class CustomButton: public Button{
 public:
@@ -80,6 +84,7 @@ private:
             display->SetChatMessage("system", "");
             display->SetEmotion("neutral");
             GetBacklight()->RestoreBrightness();
+        LumiHeapProbe("board.ready");
         });
         power_save_timer_->OnShutdownRequest([this]() {
             power_manager_->PowerOff();
@@ -191,9 +196,16 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
         
+#if LUMI_DIAG_FACE
         display_ = new LumiExpressiveDisplay(panel_io, panel,
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY
                                     );
+#else
+        display_ = new SpiLcdDisplay(panel_io, panel,
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X,
+                                    DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
+                                    DISPLAY_SWAP_XY);
+#endif
     }
 
     void InitializeButtons() {
@@ -247,6 +259,7 @@ private:
             GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
         });
 
+#if LUMI_DIAG_FACE
         // Fallback without Wi-Fi, voice, MCP or computer: two presses on volume-up.
         // Restores old XiaoZhi emoji face; repeat to re-enable expressive face.
         volume_up_button_.OnDoubleClick([this]() {
@@ -255,6 +268,7 @@ private:
             face->SetFaceEnabled(next);
             GetDisplay()->ShowNotification(next ? "Rosto LUMI ativo" : "Emojis anteriores");
         });
+#endif
 
         volume_down_button_.OnClick([this]() {
             auto codec = Board::GetInstance().GetAudioCodec();
@@ -292,6 +306,7 @@ private:
                 return true;
             });
 
+#if LUMI_DIAG_FACE
         // LUMI V8: local, bounded, non-destructive MCP tools.
         // The LLM continues running via the configured XiaoZhi service;
         // these are actions, not an on-device LLM or ESP-Claw installation.
@@ -345,6 +360,7 @@ private:
                     + "ESP-Claw autonomous agent NOT installed; "
                     + "SD multimedia NOT installed.";
             });
+#endif
     }
 
 public:
@@ -356,13 +372,21 @@ public:
                  static_cast<int>(esp_reset_reason()),
                  static_cast<unsigned int>(esp_get_free_heap_size()));
         InitializePowerManager();
+        LumiHeapProbe("board.after_power_manager");
         InitializePowerSaveTimer();
+        LumiHeapProbe("board.after_power_save_timer");
         InitializeI2c();
+        LumiHeapProbe("board.after_i2c");
         InitializeSpi();
+        LumiHeapProbe("board.after_spi");
         InitializeLcdDisplay();
+        LumiHeapProbe("board.after_lcd");
         InitializeTouch();
+        LumiHeapProbe("board.after_touch");
         InitializeButtons();
+        LumiHeapProbe("board.after_buttons");
         InitializeTools();
+        LumiHeapProbe("board.after_tools");
         GetBacklight()->RestoreBrightness();
     }
 

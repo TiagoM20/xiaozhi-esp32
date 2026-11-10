@@ -12,6 +12,7 @@
 
 #include "audio_service.h"
 #include "wake_words/custom_wake_word.h"
+#include "lumi_heap_diagnostic.h"
 
 #define TAG "AfeAudioEngine"
 
@@ -59,6 +60,7 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         return false;
     }
 
+    LumiHeapProbe("afe.initialize_entry");
     codec_ = codec;
     frame_samples_ = frame_duration_ms * 16000 / 1000;
     output_buffer_.reserve(frame_samples_);
@@ -70,6 +72,7 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         models_ = models_list;
     }
 
+    LumiHeapProbe("afe.after_model_list");
     char* wakenet_model_name = nullptr;
     char* multinet_model_name = nullptr;
     if (models_ != nullptr && models_->num > 0) {
@@ -129,6 +132,7 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         return true;
     }
 
+    LumiHeapProbe("afe.before_afe_config");
     int ref_num = codec_->input_reference() ? 1 : 0;
     std::string input_format;
     for (int i = 0; i < codec_->input_channels() - ref_num; ++i) {
@@ -142,6 +146,7 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         models_ == nullptr ? nullptr : esp_srmodel_filter(models_, ESP_VADN_PREFIX, nullptr);
     afe_config_t* afe_config =
         afe_config_init(input_format.c_str(), models_, AFE_TYPE_FD, AFE_MODE_LOW_COST);
+    LumiHeapProbe("afe.after_afe_config_init");
     if (afe_config == nullptr) {
         ESP_LOGE(TAG, "Failed to create AFE configuration");
         return false;
@@ -182,9 +187,13 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    LumiHeapProbe("afe.before_get_handle");
     afe_iface_ = esp_afe_handle_from_config(afe_config);
+    LumiHeapProbe("afe.after_get_handle");
     if (afe_iface_ != nullptr) {
+        LumiHeapProbe("afe.before_create_from_config");
         afe_data_ = afe_iface_->create_from_config(afe_config);
+        LumiHeapProbe("afe.after_create_from_config");
     }
     afe_config_free(afe_config);
 

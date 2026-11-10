@@ -1,5 +1,6 @@
 #include "application.h"
 #include "assets.h"
+#include "lumi_heap_diagnostic.h"
 #include "assets/lang_config.h"
 #include "audio_codec.h"
 #include "board.h"
@@ -59,19 +60,25 @@ Application::~Application() {
 bool Application::SetDeviceState(DeviceState state) { return state_machine_.TransitionTo(state); }
 
 void Application::Initialize() {
+    LumiHeapProbe("app.before_board_get_instance");
     auto& board = Board::GetInstance();
+    LumiHeapProbe("app.after_board_get_instance");
     SetDeviceState(kDeviceStateStarting);
 
     // Setup the display
     auto display = board.GetDisplay();
     display->SetupUI();
+    LumiHeapProbe("app.after_display_setup_ui");
     // Print board name/version info
     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
 
     // Setup the audio service
     auto codec = board.GetAudioCodec();
+    LumiHeapProbe("app.before_audio_initialize");
     audio_service_.Initialize(codec);
+    LumiHeapProbe("app.after_audio_initialize");
     audio_service_.Start();
+    LumiHeapProbe("app.after_audio_start");
     ESP_LOGI(TAG, "After board/audio init");
     SystemInfo::PrintHeapStats();
 
@@ -465,7 +472,9 @@ void Application::CheckAssetsVersion() {
     }
 
     // Apply assets
+    LumiHeapProbe("app.before_assets_apply");
     assets.Apply();
+    LumiHeapProbe("app.after_assets_apply");
     display->SetChatMessage("system", "");
     display->SetEmotion("robot_2");
 }

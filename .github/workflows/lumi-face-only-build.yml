@@ -1,0 +1,93 @@
+name: LUMI FACE ONLY — experimental compile, NO FLASH
+on:
+  workflow_dispatch:
+  push:
+    branches: [lumi/face-only-test-no-afe-20261110]
+    paths:
+      - '.github/workflows/lumi-face-only-build.yml'
+      - 'main/audio/engines/afe_audio_engine.cc'
+      - 'main/boards/waveshare/esp32-s3-touch-lcd-1.54/**'
+      - 'main/CMakeLists.txt'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure local face-only mode
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          cfg=json.loads(path.read_text(encoding="utf-8"))
+          opts=cfg["builds"][0]["sdkconfig_append"]
+          overrides={
+              "CONFIG_USE_DEVICE_AEC":"n",
+              "CONFIG_USE_SERVER_AEC":"n",
+              "CONFIG_USE_AUDIO_PROCESSOR":"n",
+              "CONFIG_WAKE_WORD_DISABLED":"y",
+              "CONFIG_USE_ESP_WAKE_WORD":"n",
+              "CONFIG_USE_AFE_WAKE_WORD":"n",
+              "CONFIG_USE_CUSTOM_WAKE_WORD":"n",
+              "CONFIG_SEND_WAKE_WORD_DATA":"n",
+              "CONFIG_SR_WN_WN10_PT_OLAESP":"n",
+              "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS":"n",
+              "CONFIG_SR_MN_CN_NONE":"y",
+              "CONFIG_SR_MN_EN_NONE":"y",
+          }
+          cfg["builds"][0]["sdkconfig_append"]=[x for x in opts if x.split("=",1)[0] not in overrides]+[k+"="+v for k,v in overrides.items()]
+          path.write_text(json.dumps(cfg,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+          engine=Path("main/audio/engines/afe_audio_engine.cc").read_text()
+          assert 'LUMI FACE PREVIEW: WakeNet and AFE disabled' in engine
+          assert 'wake_detector_ = WakeDetector::kNone;' in engine
+          assert 'models_ = nullptr;' in engine
+          print("Runtime AFE bypass present. Speech only by physical button.")
+          PY
+      - name: Build XiaoZhi WaveShare face-only
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+      - name: Verify no voice wake model active and package — not installable
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          cfg=Path("sdkconfig").read_text().splitlines()
+          for s in ("# CONFIG_USE_AFE_WAKE_WORD is not set","# CONFIG_USE_AUDIO_PROCESSOR is not set","# CONFIG_USE_CUSTOM_WAKE_WORD is not set"):
+              assert s in cfg,s
+          firmware=Path("build/xiaozhi.bin")
+          elf=Path("build/xiaozhi.elf")
+          assert firmware.read_bytes()[0]==0xE9 and 1_000_000<firmware.stat().st_size<0x3f0000
+          manifest={
+            "format":"lumi-face-only-EXPERIMENTAL",
+            "flash_safe":False,
+            "requires_verified_one-slot-ota_rollback":True,
+            "hardware_tested":False,
+            "only_for_display_experiment":True,
+            "wakeword_working":False,
+            "wakeword_disabled_reason":"bypass AFE memory corruption observed on V8",
+            "voice_mode":"manual button only",
+            "risk":"still may crash, old V8 heap fault could originate in display",
+            "firmware_sha256":hashlib.sha256(firmware.read_bytes()).hexdigest(),
+            "elf_sha256":hashlib.sha256(elf.read_bytes()).hexdigest(),
+          }
+          with ZipFile("LUMI-CARAS-SOMENTE-NAO-INSTALAR.zip","w",ZIP_DEFLATED,compresslevel=6) as z:
+              z.writestr("manifest.json",json.dumps(manifest,indent=2,ensure_ascii=False))
+              z.writestr("NAO_INSTALAR.txt","VARIANTE EXPERIMENTAL. AINDA SEM TESTE FISICO. Sem ativacao por voz. NAO INSTALAR sem OTA segura e rollback.\n")
+              z.write(firmware,"firmware-NAO-INSTALAR.bin")
+              z.write(elf,"debug-NAO-INSTALAR.elf")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-CARAS-SOMENTE-NAO-INSTALAR
+          path: LUMI-CARAS-SOMENTE-NAO-INSTALAR.zip
+          retention-days: 20

@@ -69,6 +69,32 @@ jobs:
         run: |
           source "$IDF_PATH/export.sh"
           python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+      - name: Decode V8 crash stack without flashing
+        shell: bash
+        run: |
+          {
+            echo "LUMI V8 - Analise automatica do stack serial (sem flash)"
+            echo "Aviso: ELF reconstruido; enderecos apenas conclusivos se coincidir o layout e compilacao originais."
+            echo "Git commit: ${{ github.sha }}"
+            echo "ELF build: $(sha256sum build/xiaozhi.elf)"
+            echo "BIN build: $(sha256sum build/xiaozhi.bin)"
+            echo ""
+            echo "Original serial: assert block_trim_free tlsf_control_functions.h:548"
+            echo "Model: wn10_pt_olaesp. Crash after AfeAudioEngine Before AFE create"
+            echo "Backtrace addresses:"
+            xtensa-esp32s3-elf-addr2line -e build/xiaozhi.elf -a -f -C -i \
+              0x403871c1 0x4038718d 0x40385dc5 0x403893b1 \
+              0x40388f74 0x4037a2a0 0x4037a2c0 0x40379f62 \
+              0x40385dd6 0x421b2c9d 0x420a1ffc 0x420a4769 \
+              0x4209d0a9 || true
+          } | tee LUMI-V8-BACKTRACE-SIMBOLOS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-V8-ELF-SIMBOLOS-NAO-INSTALAR
+          path: |
+            LUMI-V8-BACKTRACE-SIMBOLOS.txt
+            build/xiaozhi.elf
+          retention-days: 30
       - name: Validate and package (not installable via LUMI CORE)
         shell: bash
         run: |

@@ -1,0 +1,143 @@
+name: LUMI TLSF heap diagnosis — BUILD ONLY
+on:
+  workflow_dispatch:
+  push:
+    branches: [lumi/diagnostico-tlsf-v3-v8-20261110]
+    paths:
+      - '.github/workflows/lumi-tlsf-heap-diagnostic.yml'
+      - 'main/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-diagnostic:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: legacy-lcd-basic
+            face: 0
+            heap: basic
+          - variant: expressive-lcd-basic
+            face: 1
+            heap: basic
+          - variant: expressive-lcd-light-poisoning
+            face: 1
+            heap: light
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare comparative WakeNet10 test variants
+        shell: bash
+        env:
+          LUMI_FACE: ${{ matrix.face }}
+          LUMI_HEAP: ${{ matrix.heap }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          board=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc")
+          s=board.read_text()
+          token="#define LUMI_DIAG_FACE 1"
+          assert s.count(token)==1, "Unexpected face compile switch"
+          face=os.environ["LUMI_FACE"]
+          assert face in ("0","1")
+          board.write_text(s.replace(token, "#define LUMI_DIAG_FACE "+face))
+          cfgpath=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json")
+          cfg=json.loads(cfgpath.read_text(encoding="utf-8"))
+          overrides={
+            "CONFIG_USE_DEVICE_AEC":"n",
+            "CONFIG_USE_SERVER_AEC":"n",
+            "CONFIG_WAKE_WORD_DISABLED":"n",
+            "CONFIG_USE_AFE_WAKE_WORD":"y",
+            "CONFIG_USE_CUSTOM_WAKE_WORD":"n",
+            "CONFIG_USE_ESP_WAKE_WORD":"n",
+            "CONFIG_WAKE_WORD_DETECTION_IN_LISTENING":"n",
+            "CONFIG_SEND_WAKE_WORD_DATA":"y",
+            "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS":"n",
+            "CONFIG_SR_WN_WN10_PT_OLAESP":"y",
+            "CONFIG_SR_MN_CN_NONE":"y",
+            "CONFIG_SR_MN_EN_NONE":"y",
+          }
+          if os.environ["LUMI_HEAP"]=="light":
+              overrides["CONFIG_HEAP_POISONING_LIGHT"]="y"
+          opts=cfg["builds"][0]["sdkconfig_append"]
+          cfg["builds"][0]["sdkconfig_append"]=[x for x in opts if x.split("=",1)[0] not in overrides] + [k+"="+v for k,v in overrides.items()]
+          cfgpath.write_text(json.dumps(cfg,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+          assert "esp_vfs_fat_sdmmc_mount" not in board.read_text()
+          print("Face:",face,"Heap poisoning:",os.environ["LUMI_HEAP"])
+          PY
+      - name: Confirm no simultaneous WakeNet models and instrumented checkpoints
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc").read_text()
+          q=Path("main/audio/engines/afe_audio_engine.cc").read_text()
+          app=Path("main/application.cc").read_text()
+          assert "LUMI_DIAG_FACE" in p
+          assert 'LumiHeapProbe("board.after_lcd")' in p
+          assert 'LumiHeapProbe("app.after_display_setup_ui")' in app
+          assert 'LumiHeapProbe("app.after_assets_apply")' in app
+          assert 'LumiHeapProbe("afe.before_create_from_config")' in q
+          print("Heap checkpoints present, single WakeNet expected")
+          PY
+      - name: Compile ESP-IDF only (DO NOT FLASH)
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+      - name: Package diagnostic binaries and ELF symbols (NOT INSTALLABLE)
+        shell: bash
+        env:
+          LUMI_VARIANT: ${{ matrix.variant }}
+          LUMI_FACE: ${{ matrix.face }}
+          LUMI_HEAP: ${{ matrix.heap }}
+        run: |
+          python3 - <<'PY'
+          import os,hashlib,json,zipfile
+          from pathlib import Path
+          c=Path("sdkconfig").read_text().splitlines()
+          assert "CONFIG_USE_AFE_WAKE_WORD=y" in c
+          assert "CONFIG_SR_WN_WN10_PT_OLAESP=y" in c
+          assert "# CONFIG_USE_CUSTOM_WAKE_WORD is not set" in c
+          assert "CONFIG_LANGUAGE_PT_PT=y" in c
+          if os.environ["LUMI_HEAP"]=="light":
+              assert "CONFIG_HEAP_POISONING_LIGHT=y" in c
+          fw=Path("build/xiaozhi.bin")
+          elf=Path("build/xiaozhi.elf")
+          assets=Path("build/generated_assets.bin")
+          assert fw.stat().st_size>1000000 and fw.read_bytes()[0]==0xE9
+          assert elf.stat().st_size>1000000
+          assert b"wn10_pt_olaesp" in assets.read_bytes()
+          manifest={
+            "status":"DO NOT FLASH - CI source/ELF comparison only",
+            "variant":os.environ["LUMI_VARIANT"],
+            "face_enabled_at_compile":os.environ["LUMI_FACE"]=="1",
+            "heap_poisoning":os.environ["LUMI_HEAP"],
+            "flash_safe":False,
+            "wake_word":"Olá ESP",
+            "model":"wn10_pt_olaesp",
+            "assets_policy":"not touched, not installed",
+            "sha256":{name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in [
+              ("firmware.bin",fw),("firmware.elf",elf),("model-assets.bin",assets)
+            ]},
+          }
+          name="LUMI-HEAP-DIAG-"+os.environ["LUMI_VARIANT"]+"-NAO-INSTALAR.zip"
+          with zipfile.ZipFile(name,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+              z.writestr("manifest.json",json.dumps(manifest,indent=2,ensure_ascii=False))
+              z.writestr("NAO_INSTALAR.txt","Testes de diagnostico somente. Nao gravar este firmware na LUMI DESK.\n")
+              z.write(elf,"debug-symbols.elf")
+              z.write(fw,"firmware-NAO-INSTALAR.bin")
+              z.write(assets,"model-assets-NAO-INSTALAR.bin")
+          print(name)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-HEAP-DIAG-${{ matrix.variant }}-NAO-INSTALAR
+          path: LUMI-HEAP-DIAG-*-NAO-INSTALAR.zip
+          retention-days: 20

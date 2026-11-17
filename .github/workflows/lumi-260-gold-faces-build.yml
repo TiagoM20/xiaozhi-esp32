@@ -1,6 +1,10 @@
 name: LUMI 2.6.0 GOLD — original plus golden faces (build only)
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/lumi-260-gold/**'
+      - '.github/workflows/lumi-260-gold-faces-build.yml'
   push:
     branches: [experiment/lumi-260-gold-faces-baseline-20261117]
     paths:

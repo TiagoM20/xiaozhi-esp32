@@ -1,0 +1,132 @@
+name: LUMI 2.6.0 GOLD — original plus golden faces (build only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/lumi-260-gold-faces-baseline-20261117]
+    paths:
+      - 'tools/lumi-260-gold/**'
+      - '.github/workflows/lumi-260-gold-faces-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    timeout-minutes: 70
+    steps:
+      - name: Get isolated LUMI experiment
+        uses: actions/checkout@v4
+        with:
+          path: lumi
+      - name: Get EXACT XiaoZhi v2.6.0 source as shown in console screenshot
+        uses: actions/checkout@v4
+        with:
+          repository: 78/xiaozhi-esp32
+          ref: 67ca62d4bb7d91e514d7ccd5e6977745002f41f4
+          path: upstream
+          submodules: recursive
+      - name: Validate upstream and apply gold face only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile lumi/tools/lumi-260-gold/patch_board.py
+          cd upstream
+          test "$(git rev-parse HEAD)" = "67ca62d4bb7d91e514d7ccd5e6977745002f41f4"
+          cd ..
+          python3 lumi/tools/lumi-260-gold/patch_board.py upstream \
+            lumi/tools/lumi-260-gold/lumi_gold_face.h
+          cd upstream
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          board="main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc"
+          orig=subprocess.check_output(["git","show",f"HEAD:{board}"],text=True)
+          expected=orig.replace('#include "display/lcd_display.h"',
+                                '#include "display/lcd_display.h"\n#include "lumi_gold_face.h"')
+          expected=expected.replace("display_ = new SpiLcdDisplay(panel_io, panel,",
+                                    "display_ = new LumiGoldFaceDisplay(panel_io, panel,")
+          assert Path(board).read_text()==expected,"Unexpected modifications in board"
+          files=subprocess.check_output(["git","diff","--name-only"],text=True).splitlines()
+          assert files==[board],f"Unexpected source changes: {files}"
+          assert "CONFIG_USE_DEVICE_AEC=y" in Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json").read_text()
+          print("PASS: upstream 2.6.0, exactly 2 board source lines and 1 gold header")
+          PY
+      - name: Build official XiaoZhi 2.6.0 Waveshare pt-PT + gold face
+        shell: bash
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 \
+            --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          test -s build/xiaozhi.bin
+          test -s build/xiaozhi.elf
+          test -s sdkconfig
+      - name: Check binary and package safe experimental candidate
+        shell: bash
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          import hashlib,json,struct
+          firmware=Path("build/xiaozhi.bin").read_bytes()
+          elf=Path("build/xiaozhi.elf").read_bytes()
+          assert firmware[0]==0xe9, "Invalid ESP-IDF image header"
+          assert len(firmware)>1000000 and len(firmware)<0x3f0000, "Oversize app image"
+          config=Path("sdkconfig").read_text()
+          assert "CONFIG_LANGUAGE_PT_PT=y" in config
+          board=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc").read_text()
+          face=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h").read_text()
+          assert "new LumiGoldFaceDisplay" in board
+          assert "0xD8B35A" in face and "bool SetEmotion(const char* emotion) override" in face
+          assert "McpServer" not in face and "Settings" not in face
+          assets=Path("build/generated_assets.bin")
+          files={
+            "LUMI-2.6.0-OURO-app-CANDIDATO.bin": firmware,
+            "LUMI-2.6.0-OURO-debug.elf": elf,
+            "sdkconfig":config.encode(),
+          }
+          if assets.is_file():
+            files["assets-OFICIAIS-REFERENCIA-NAO-GRAVAR.bin"]=assets.read_bytes()
+          manifest={
+            "source":"78/xiaozhi-esp32",
+            "source_sha":"67ca62d4bb7d91e514d7ccd5e6977745002f41f4",
+            "version":"2.6.0",
+            "board":"waveshare/esp32-s3-touch-lcd-1.54",
+            "language":"pt-PT",
+            "changes":["original stock 2.6.0", "only gold LVGL face renderer #D8B35A"],
+            "not_changed":["wake word","AFE","voice","MCP","power","NVS","partitions","assets","OTA","Wi-Fi"],
+            "runtime_tested":False,
+            "installer_included":False,
+            "safe_to_auto_flash":False,
+            "previous_v8_issue":"TLSF heap assert after AFE create, not yet resolved",
+            "install_notes":"Do not replace a known working firmware or flash the assets from this ZIP without a validated 16MiB backup and recovery.",
+            "images":{name:{"sha256":hashlib.sha256(data).hexdigest(),"size":len(data)}
+                      for name,data in files.items()},
+          }
+          notice=(
+            "LUMI 2.6.0 OURO - CANDIDATO DE COMPILACAO, NAO TESTADO NA DESK.\n"
+            "Nao flashar automaticamente: V5-V8 tiveram reinicios/TLSF.\n"
+            "Firmware original XiaoZhi 2.6.0 + apenas renderizacao facial dourada.\n"
+            "Nao copiar/instalar a particao de assets de referencia.\n"
+            "Para testar de forma controlada, verificar backup integral de 16MiB,"
+            " mapa real OTA, UART desde boot, rollback e particao de recursos.\n"
+          )
+          with ZipFile("LUMI-260-OURO-CANDIDATO-NAO-INSTALAR.zip","w",ZIP_DEFLATED,compresslevel=6) as z:
+            z.writestr("manifest.json",json.dumps(manifest,indent=2,ensure_ascii=False))
+            z.writestr("LEIA-ANTES-DE-INSTALAR.txt",notice)
+            for name,blob in files.items():z.writestr(name,blob)
+          print("FIRMWARE SHA256",manifest["images"]["LUMI-2.6.0-OURO-app-CANDIDATO.bin"]["sha256"])
+          print("PACKAGED",len(firmware),"bytes, gold fixed color, assets reference only")
+          PY
+      - name: Keep candidate available for controlled test
+        uses: actions/upload-artifact@v4
+        with:
+          name: LUMI-260-OURO-CANDIDATO-NAO-INSTALAR
+          path: upstream/LUMI-260-OURO-CANDIDATO-NAO-INSTALAR.zip
+          retention-days: 30

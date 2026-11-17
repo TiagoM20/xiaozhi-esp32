@@ -10,6 +10,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <cmath>
+#include <initializer_list>
 #include <cstring>
 #include <cstdint>
 

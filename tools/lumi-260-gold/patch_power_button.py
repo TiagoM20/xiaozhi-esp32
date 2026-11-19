@@ -10,7 +10,7 @@ BOARD="main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc"
 def apply(repo: Path) -> None:
     path=repo/BOARD
     src=path.read_text(encoding="utf-8")
-    first="        pwr_button_.OnPressUp([this]() {"
+    first="        pwr_button_.OnPressUp([this]() {\n"
     last="        volume_up_button_.OnClick([this]() {"
     assert src.count(first)==1 and src.count(last)==1, "Unexpected Waveshare button layout"
     before, tail=src.split(first,1)

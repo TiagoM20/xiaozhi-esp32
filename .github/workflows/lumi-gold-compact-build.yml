@@ -59,7 +59,7 @@ jobs:
           expected=orig.replace('#include "display/lcd_display.h"','#include "display/lcd_display.h"\n#include "lumi_gold_face.h"').replace('display_ = new SpiLcdDisplay(panel_io, panel,','display_ = new LumiGoldFaceDisplay(panel_io, panel,')
           assert Path('upstream',p).read_text()==expected
           assert subprocess.check_output(['git','-C','upstream','diff','--name-only'],text=True).splitlines()==[p]
-          assert 'void SetEmotion(const char* emotion) override' in Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h').read_text()
+          assert 'bool SetEmotion(const char* emotion) override' in Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h').read_text()
           PY
       - name: Compilar XiaoZhi oficial 2.6.0 Waveshare pt-PT
         working-directory: upstream

@@ -1,0 +1,101 @@
+name: LUMI 2.6.0 OURO - limpeza seletiva e compilacao
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/lumi-gold-compact-build.yml']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remover somente artefactos PT-BR ou de V5-V8 LUMI
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo,{owner,repo,per_page:100});
+            let count=0;
+            for(const a of artifacts){
+              const n=a.name||'';
+              if(!/lumi/i.test(n))continue;
+              if(!/(?:^|[-_. ])(?:v[5-8](?:[._ -]|$)|pt[-_ ]?br(?:[-_ .]|$))/i.test(n))continue;
+              await github.rest.actions.deleteArtifact({owner,repo,artifact_id:a.id});
+              core.info('Removed nonfunctional artifact '+a.id+' '+n);
+              count++;
+            }
+            core.info('Cleaned '+count+' eligible artifacts; kept stable backups/2.5.1.');
+  build:
+    needs: cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/lumi-260-gold-faces-baseline-20261117
+          path: lumi
+      - uses: actions/checkout@v4
+        with:
+          repository: 78/xiaozhi-esp32
+          ref: 67ca62d4bb7d91e514d7ccd5e6977745002f41f4
+          path: upstream
+          submodules: recursive
+      - name: Aplicar apenas as caras cor mel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "67ca62d4bb7d91e514d7ccd5e6977745002f41f4"
+          python3 lumi/tools/lumi-260-gold/patch_board.py upstream lumi/tools/lumi-260-gold/lumi_gold_face.h
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          p='main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc'
+          orig=subprocess.check_output(['git','-C','upstream','show',f'HEAD:{p}'],text=True)
+          expected=orig.replace('#include "display/lcd_display.h"','#include "display/lcd_display.h"\n#include "lumi_gold_face.h"').replace('display_ = new SpiLcdDisplay(panel_io, panel,','display_ = new LumiGoldFaceDisplay(panel_io, panel,')
+          assert Path('upstream',p).read_text()==expected
+          assert subprocess.check_output(['git','-C','upstream','diff','--name-only'],text=True).splitlines()==[p]
+          assert 'void SetEmotion(const char* emotion) override' in Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h').read_text()
+          PY
+      - name: Compilar XiaoZhi oficial 2.6.0 Waveshare pt-PT
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
+          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          test -s build/xiaozhi.bin
+      - name: Verificar e empacotar candidato
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json,hashlib
+          data=Path('build/xiaozhi.bin').read_bytes()
+          assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
+          name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
+          Path(name).write_bytes(data)
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
+          with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
+            z.write(name);z.write('LUMI-manifest.json')
+          print('SHA256',manifest['app_sha256'])
+          PY
+      - name: Publicar release apenas de teste; sem gasto de artifact storage
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-ouro-candidata-${{ github.run_number }}
+          name: LUMI OURO 2.6.0 - candidata de teste
+          prerelease: true
+          make_latest: false
+          body: 'Candidato nao testado na DESK; nao gravar sem backup integral, particoes/OTA verificadas e rollback testado. Preserva NVS/assets; apenas caras cor mel #D8B35A.'
+          files: |
+            upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            upstream/LUMI-manifest.json

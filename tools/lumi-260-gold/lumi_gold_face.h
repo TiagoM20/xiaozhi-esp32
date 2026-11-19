@@ -72,7 +72,7 @@ public:
         if(emoji_label_) lv_obj_add_flag(emoji_label_,LV_OBJ_FLAG_HIDDEN);
         if(emoji_image_) lv_obj_add_flag(emoji_image_,LV_OBJ_FLAG_HIDDEN);
         DrawFrame();
-        // ~4 frames/s rather than the older V8's ~12fps; reduced LVGL work.
+        // 10 updates/s with six persistent LVGL widgets and no per-frame allocations.
         animation_=lv_timer_create(&LumiGoldFaceDisplay::Tick,100,this);
         ESP_LOGI("LUMI_GOLD","Gold face initialized (6 LVGL widgets, 100ms timer, pt-PT states)");
     }

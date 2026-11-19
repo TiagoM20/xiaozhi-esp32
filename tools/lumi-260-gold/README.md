@@ -11,7 +11,9 @@
 No código **oficial** da Waveshare:
 - acrescenta `#include "lumi_gold_face.h"`;
 - troca `new SpiLcdDisplay(...)` por `new LumiGoldFaceDisplay(...)`;
-- acrescenta o cabeçalho `lumi_gold_face.h`: seis widgets LVGL; olhos sem íris, sobrancelhas e boca; mudança de expressão consoante os estados do agente; cor fixa dourada; temporizador LVGL a 250 ms.
+- acrescenta o cabeçalho `lumi_gold_face.h`: seis widgets LVGL; olhos sem íris, sobrancelhas e boca; piscar, respiração, olhar e expressões; boca animada nos estados de fala reais do XiaoZhi; cor fixa dourada; temporizador LVGL a 100 ms.
+
+O único comportamento adicional é visual: `SetStatus` acompanha os estados de ouvir e falar já comunicados pela aplicação. Há 10 atualizações por segundo, sem alocar novos objetos em cada frame.
 
 **Não** copia nenhum dos patches de V5–V8 (AFEs alterados, WakeNet10 PT customizado, wake words duplas, dual-slot forçado, SD/multimédia, novas ferramentas MCP, alterações de heap, NVS, layout ou Wi-Fi). Mantém `CONFIG_USE_DEVICE_AEC=y`, conforme preset oficial da placa. O áudio/IA seguem o XiaoZhi, e pt-PT é selecionado na compilação.
 

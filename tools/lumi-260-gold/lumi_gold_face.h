@@ -76,11 +76,11 @@ public:
         ESP_LOGI("LUMI_GOLD","Gold face initialized (6 LVGL widgets, 250ms timer)");
     }
 
-    bool SetEmotion(const char* emotion) override {
+    void SetEmotion(const char* emotion) override {
         const char* value=emotion?emotion:"neutral";
-        if(face_==nullptr) return SpiLcdDisplay::SetEmotion(value);
+        if (face_ == nullptr) { SpiLcdDisplay::SetEmotion(value); return; }
         DisplayLockGuard guard(this);
-        if(!guard) return false;
+        if(!guard) return;
         mood_=Mood(value);
         // Prevent legacy GIF playback underneath the gold face.
         if(gif_controller_) {
@@ -90,7 +90,7 @@ public:
         if(emoji_label_) lv_obj_add_flag(emoji_label_,LV_OBJ_FLAG_HIDDEN);
         if(emoji_image_) lv_obj_add_flag(emoji_image_,LV_OBJ_FLAG_HIDDEN);
         DrawFrame();
-        return true;
+        return;
     }
 
 private:

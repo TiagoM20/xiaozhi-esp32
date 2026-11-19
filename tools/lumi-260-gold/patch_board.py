@@ -21,7 +21,7 @@ def apply(repo: Path, asset: Path):
     assert not header.exists(),"Gold header already exists; refusing patch"
     text=asset.read_text(encoding="utf-8")
     assert "class LumiGoldFaceDisplay" in text
-    assert "void SetEmotion(const char* emotion) override" in text
+    assert "bool SetEmotion(const char* emotion) override" in text
     assert "static constexpr uint32_t kGold=0xD8B35A" in text
     assert "#include <esp_timer.h>" in text
     assert 'Settings' not in text and 'McpServer' not in text

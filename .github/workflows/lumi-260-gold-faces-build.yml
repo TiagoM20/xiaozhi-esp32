@@ -87,7 +87,7 @@ jobs:
           board=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc").read_text()
           face=Path("main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h").read_text()
           assert "new LumiGoldFaceDisplay" in board
-          assert "0xD8B35A" in face and "void SetEmotion(const char* emotion) override" in face
+          assert "0xD8B35A" in face and "bool SetEmotion(const char* emotion) override" in face
           assert "McpServer" not in face and "Settings" not in face
           assets=Path("build/generated_assets.bin")
           files={

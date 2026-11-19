@@ -1,4 +1,4 @@
-name: LUMI 2.6.0 OURO - limpeza seletiva e compilacao
+name: LUMI 2.6.0 OURO - botao PWR corrigido
 on:
   workflow_dispatch: {}
   push:
@@ -50,13 +50,28 @@ jobs:
           set -euo pipefail
           test "$(git -C upstream rev-parse HEAD)" = "67ca62d4bb7d91e514d7ccd5e6977745002f41f4"
           python3 lumi/tools/lumi-260-gold/patch_board.py upstream lumi/tools/lumi-260-gold/lumi_gold_face.h
+          python3 lumi/tools/lumi-260-gold/patch_power_button.py upstream
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
           p='main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc'
           orig=subprocess.check_output(['git','-C','upstream','show',f'HEAD:{p}'],text=True)
           expected=orig.replace('#include "display/lcd_display.h"','#include "display/lcd_display.h"\n#include "lumi_gold_face.h"').replace('display_ = new SpiLcdDisplay(panel_io, panel,','display_ = new LumiGoldFaceDisplay(panel_io, panel,')
-          assert Path('upstream',p).read_text()==expected
+          modified=Path('upstream',p).read_text()
+          button_start='        pwr_button_.OnPressUp([this]() {'
+          button_end='        volume_up_button_.OnClick([this]() {'
+          assert modified.count('        pwr_button_.OnClick([this]() {')==1
+          assert button_start not in modified
+          assert 'pwr_button_.OnPressUpDel();' not in modified
+          assert 'pwr_button_.OnLongPress([this]() {' in modified
+          assert 'pwr_button_.OnDoubleClick([this]() {' in modified
+          assert 'pwr_button_.OnMultipleClick([this]() {' in modified
+          # Only button block and the gold display constructor/header are allowed to differ.
+          oldhead,oldrest=expected.split(button_start,1)
+          _,oldsuffix=oldrest.split(button_end,1)
+          newhead,newrest=modified.split('        // GPIO5: middle PWR button',1)
+          _,newsuffix=newrest.split(button_end,1)
+          assert newhead==oldhead and newsuffix==oldsuffix
           assert subprocess.check_output(['git','-C','upstream','diff','--name-only'],text=True).splitlines()==[p]
           assert 'bool SetEmotion(const char* emotion) override' in Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h').read_text()
           PY
@@ -68,6 +83,7 @@ jobs:
           source "$IDF_PATH/export.sh"
           python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
           grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
+          grep -qx 'CONFIG_SR_WN_WN9_HIESP=y' sdkconfig
           test -s build/xiaozhi.bin
       - name: Verificar e empacotar candidato
         working-directory: upstream
@@ -81,7 +97,7 @@ jobs:
           assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
           name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
           Path(name).write_bytes(data)
-          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onclick','wake_word':'wn9_hiesp','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
           Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
           with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
             z.write(name);z.write('LUMI-manifest.json')
@@ -91,10 +107,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: lumi-2.6.0-ouro-candidata-${{ github.run_number }}
-          name: LUMI OURO 2.6.0 - candidata de teste
+          name: LUMI OURO 2.6.0 - botao PWR corrigido, Hi ESP
           prerelease: true
           make_latest: false
-          body: 'Candidato nao testado na DESK; nao gravar sem backup integral, particoes/OTA verificadas e rollback testado. Preserva NVS/assets; apenas caras cor mel #D8B35A.'
+          body: 'Candidato NAO testado fisicamente na DESK. Botao central PWR GPIO5 corrigido; WakeNet stock reconhece HI ESP, NAO Ola Lumi. Preserva NVS/assets, nao altera motor de audio. Instalar apenas com backup e reversao OTA validados.'
           files: |
             upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
             upstream/LUMI-manifest.json

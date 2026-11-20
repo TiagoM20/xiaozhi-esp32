@@ -75,7 +75,7 @@ jobs:
           assert changed == expected, (changed, expected)
           root=Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54')
           assert (root/'lumi_gold_face.h').is_file() and (root/'lumi_shake_sensor.h').is_file() and (root/'lumi_fx_sound.h').is_file()
-          assert 'QueueFx(bool touch)' in (root/'lumi_gold_face.h').read_text()
+          assert 'QueueFx(bool touch,int variant)' in (root/'lumi_gold_face.h').read_text()
           assert 'base_w = mode == 5 ? 74' in (root/'lumi_gold_face.h').read_text()
           board=(root/'esp32-s3-touch-lcd-1.54.cc').read_text()
           assert board.count('pwr_button_.OnPressDown([this]() {') == 1

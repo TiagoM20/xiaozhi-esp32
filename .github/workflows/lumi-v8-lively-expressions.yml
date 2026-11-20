@@ -1,0 +1,127 @@
+name: LUMI 2.6.0 V8 - EXPRESSOES VIVAS SONS SEM VOZ
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ['.github/workflows/lumi-v8-lively-expressions.yml']
+permissions:
+  contents: write
+jobs:
+  sfx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/lumi-260-v8-expressions-and-audio-20261120
+          path: lumi
+      - name: Build original non-verbal Ogg Opus clips with FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          mkdir -p sound-build
+          python3 lumi/tools/lumi-260-gold/make_v8_sounds.py sound-build/lumi_fx_sound.h
+          grep -q kTapPingOgg sound-build/lumi_fx_sound.h
+          grep -q kShakeTumbleOgg sound-build/lumi_fx_sound.h
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumi-v8-sfx-header
+          path: sound-build/lumi_fx_sound.h
+          retention-days: 1
+  build:
+    needs: sfx
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/lumi-260-v8-expressions-and-audio-20261120
+          path: lumi
+      - uses: actions/checkout@v4
+        with:
+          repository: 78/xiaozhi-esp32
+          ref: 67ca62d4bb7d91e514d7ccd5e6977745002f41f4
+          path: upstream
+          submodules: recursive
+      - name: Retrieve original nonverbal SFX header
+        uses: actions/download-artifact@v4
+        with:
+          name: lumi-v8-sfx-header
+          path: upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54
+      - name: Apply isolated face PWR shake and RAW audio patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "67ca62d4bb7d91e514d7ccd5e6977745002f41f4"
+          python3 lumi/tools/lumi-260-gold/patch_board.py upstream lumi/tools/lumi-260-gold/lumi_gold_face.h
+          python3 lumi/tools/lumi-260-gold/patch_power_button.py upstream
+          python3 lumi/tools/lumi-260-gold/patch_imu.py upstream lumi/tools/lumi-260-gold/lumi_shake_sensor.h
+          python3 lumi/tools/lumi-260-gold/patch_raw_audio.py upstream
+          test -s upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_fx_sound.h
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          changed = subprocess.check_output(['git','-C','upstream','diff','--name-only'],text=True).splitlines()
+          expected = sorted(['main/boards/waveshare/esp32-s3-touch-lcd-1.54/esp32-s3-touch-lcd-1.54.cc',
+                             'main/boards/waveshare/esp32-s3-touch-lcd-1.54/config.json',
+                             'main/audio/engines/afe_audio_engine.cc'])
+          assert changed == expected, (changed, expected)
+          root=Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54')
+          assert (root/'lumi_gold_face.h').is_file() and (root/'lumi_shake_sensor.h').is_file() and (root/'lumi_fx_sound.h').is_file()
+          assert 'QueueFx(bool touch)' in (root/'lumi_gold_face.h').read_text()
+          assert 'base_w = mode == 5 ? 74' in (root/'lumi_gold_face.h').read_text()
+          board=(root/'esp32-s3-touch-lcd-1.54.cc').read_text()
+          assert board.count('pwr_button_.OnPressDown([this]() {') == 1
+          assert board.count('LumiGoldFaceDisplay') >= 1
+          src=Path('upstream/main/audio/engines/afe_audio_engine.cc').read_text()
+          assert src.count('LUMI AUDIO RECOVERY: raw microphone') == 1
+          PY
+      - name: Compile official 2.6.0 with RAW PCM and disabled WakeNet
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$IDF_PATH/export.sh"
+          python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT --wake-word disabled
+          python3 - <<'PY'
+          from pathlib import Path
+          cfg=Path('sdkconfig').read_text()
+          assert 'CONFIG_LANGUAGE_PT_PT=y' in cfg
+          assert 'CONFIG_WAKE_WORD_DISABLED=y' in cfg
+          for option in ('USE_AUDIO_PROCESSOR','USE_DEVICE_AEC','USE_AFE_WAKE_WORD','USE_CUSTOM_WAKE_WORD'):
+              assert ('CONFIG_'+option+'=y') not in cfg, option
+          assert Path('build/xiaozhi.bin').stat().st_size > 1000000
+          print('RAW audio disabled AFE WakeNet and device AEC; pt-PT confirmed')
+          PY
+      - name: Package integrity checked release
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json,hashlib
+          data=Path('build/xiaozhi.bin').read_bytes()
+          assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
+          name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
+          Path(name).write_bytes(data)
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','shake':'qmi8658_dizzy_optional','wake_word':'disabled_raw_audio_recovery','audio_mode':'RAW_PCM_NO_AFE','fix':'stale wn10_pt_olaesp asset blocked AFE create','edition':'v8_lively_expressions_nonverbal_sfx','eyes':'2x_86x80','sound_fx':'touch_3_nonverbal_and_shake_2_ogg_opus','sfx_mode':'idle_only_5_original_effects_cooldown','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
+          with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
+              z.write(name); z.write('LUMI-manifest.json')
+          print('SHA256',manifest['app_sha256'])
+          PY
+      - name: Publish unique candidate release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-v8-lively-${{ github.run_id }}
+          name: LUMI OURO 2.6.0 V8 - Expressive Eyes and 5 Nonverbal Sounds
+          prerelease: true
+          make_latest: false
+          body: 'Experimental V8 from confirmed working RAW audio base: double-size eyes, curiosity and bashfulness, double blink, tilt-following eyes, 3 short nonverbal chimes on touch and 2 wobble effects on shake. NO male Ai; Raquel speech remains server-side only. Audio effects are only active while idle. Manual PWR and long touch supported. WakeNet disabled. Preserve NVS/assets.'
+          files: |
+            upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            upstream/LUMI-manifest.json

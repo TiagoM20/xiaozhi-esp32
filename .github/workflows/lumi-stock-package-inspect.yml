@@ -1,0 +1,36 @@
+name: LUMI - Verificar estrutura do pacote XiaoZhi 2.6.0 stock
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ['.github/workflows/lumi-stock-package-inspect.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download and inspect upstream official package
+        env:
+          UPSTREAM_SHA: 6c50de226b9ebf004c78332dc11d1be3d50433fdf21ab5c35e9150c335d96f4e
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 -o stock.zip 'https://github.com/78/xiaozhi-esp32/releases/download/v2.6.0/v2.6.0_waveshare-esp32-s3-touch-lcd-1.54.zip'
+          echo "$UPSTREAM_SHA  stock.zip" | sha256sum -c
+          unzip -l stock.zip
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          import hashlib
+          with ZipFile('stock.zip') as z:
+            for item in z.infolist():
+              print('STOCK_MEMBER',repr(item.filename),item.file_size,'COMPRESSED',item.compress_size)
+              if item.is_dir(): continue
+              data=z.read(item)
+              print('STOCK_SHA256',item.filename,hashlib.sha256(data).hexdigest())
+              print('STOCK_FIRST_BYTES',data[:32].hex())
+              if item.filename.endswith('merged-binary.bin'):
+                print('MERGED_LENGTH',len(data))
+                for address in (0x0,0x8000,0xd000,0x20000,0x410000,0x800000):
+                  print('MERGED_REGION',hex(address),data[address:address+32].hex())
+          PY

@@ -82,6 +82,15 @@ private:
                     a[i]=static_cast<float>(signedRaw)*4.0f/32768.f;
                 }
                 const int64_t now=esp_timer_get_time()/1000;
+                // 20 Hz IMU; move the gaze slightly with gravity, without touching LVGL.
+                // Keep the eyes within the small 212 px face canvas.
+                if ((now/200) != ((now-50)/200)) {
+                    int tiltX=static_cast<int>(a[0]*3.3f);
+                    int tiltY=static_cast<int>(a[1]*2.8f);
+                    if(tiltX>3)tiltX=3; else if(tiltX< -3)tiltX=-3;
+                    if(tiltY>3)tiltY=3; else if(tiltY< -3)tiltY=-3;
+                    self->face_->SetTilt(tiltX,tiltY);
+                }
                 if (haveLast) {
                     const float dx=a[0]-last[0],dy=a[1]-last[1],dz=a[2]-last[2];
                     const float delta2=dx*dx+dy*dy+dz*dz;

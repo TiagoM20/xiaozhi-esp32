@@ -32,6 +32,7 @@ public:
         if (guard) {
             if (animation_ != nullptr) { lv_timer_delete(animation_); animation_ = nullptr; }
             if (touch_overlay_ != nullptr) { lv_obj_del(touch_overlay_); touch_overlay_ = nullptr; }
+            if (status_hitbox_ != nullptr) { lv_obj_del(status_hitbox_); status_hitbox_ = nullptr; }
         }
     }
 
@@ -91,6 +92,23 @@ public:
         lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_GESTURE, this);
         lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_LONG_PRESSED, this);
         lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_RELEASED, this);
+
+        // V8.5 immersive: hide Wi-Fi, battery, clock and idle status text.
+        // A transparent 30px top-edge touch zone reveals them for 6 seconds.
+        // Does not intercept the lower face tap or long-press-to-talk.
+        if (top_bar_) lv_obj_add_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
+        if (status_bar_) lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+        status_visible_ = false;
+        status_hitbox_ = lv_obj_create(lv_layer_top());
+        lv_obj_set_size(status_hitbox_, LV_HOR_RES, 30);
+        lv_obj_align(status_hitbox_, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_bg_opa(status_hitbox_, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(status_hitbox_, 0, 0);
+        lv_obj_set_style_pad_all(status_hitbox_, 0, 0);
+        lv_obj_set_style_radius(status_hitbox_, 0, 0);
+        lv_obj_remove_flag(status_hitbox_, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(status_hitbox_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(status_hitbox_, StatusTap, LV_EVENT_CLICKED, this);
 
         for(int i=0;i<2;++i) {
             blush_[i]=lv_obj_create(face_);
@@ -171,6 +189,9 @@ private:
     lv_obj_t* mouth_=nullptr;
     lv_obj_t* blush_[2]={nullptr,nullptr};
     lv_obj_t* touch_overlay_=nullptr;
+    lv_obj_t* status_hitbox_=nullptr;
+    int64_t status_reveal_until_ms_=0;
+    bool status_visible_=false;
     lv_timer_t* animation_=nullptr;
     int64_t touch_love_until_ms_=0;
     int64_t dizzy_until_ms_=0;
@@ -203,6 +224,33 @@ private:
             }
             if(bytes && n) app.PlaySound(std::string_view(reinterpret_cast<const char*>(bytes),n));
         });
+    }
+
+    static void StatusTap(lv_event_t* e) {
+        auto* face=static_cast<LumiGoldFaceDisplay*>(lv_event_get_user_data(e));
+        if (!face || !face->face_) return;
+        // Called by LVGL; no display lock re-entry required.
+        const int64_t now=esp_timer_get_time()/1000;
+        if (face->status_visible_) {
+            face->status_reveal_until_ms_=0;
+            face->SetStatusBars(false);
+        } else {
+            face->status_reveal_until_ms_=now+6000;
+            face->SetStatusBars(true);
+        }
+    }
+
+    void SetStatusBars(bool visible) {
+        if (status_visible_ == visible) return;
+        status_visible_=visible;
+        if (top_bar_) {
+            if (visible) lv_obj_remove_flag(top_bar_,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(top_bar_,LV_OBJ_FLAG_HIDDEN);
+        }
+        if (status_bar_) {
+            if (visible) lv_obj_remove_flag(status_bar_,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(status_bar_,LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     static void TouchEvent(lv_event_t* e) {
@@ -253,6 +301,8 @@ private:
     void DrawFrame() {
         if (!face_ || !eye_[0] || !eye_[1] || !mouth_) return;
         const int64_t ms = esp_timer_get_time() / 1000;
+        // Time-limited information overlay; audio/status values remain up to date.
+        if(status_visible_ && ms>=status_reveal_until_ms_) SetStatusBars(false);
         // Actual listening/speaking state takes precedence over stale AI emotions.
         const int idleMood = ((ms/6800)%9==3) ? 12 : (((ms/6800)%9==7) ? 13 : 0);
         // Listening and talking always take precedence over playful emotions.

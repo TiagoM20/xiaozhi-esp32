@@ -1,8 +1,6 @@
 name: LUMI 2.6.0 OURO - PWR imediato e toque apaixonado
 on:
   workflow_dispatch: {}
-  push:
-    branches: [main]
 permissions:
   contents: write
   actions: write
@@ -106,7 +104,7 @@ jobs:
       - name: Publicar release apenas de teste; sem gasto de artifact storage
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-2.6.0-ouro-candidata-${{ github.run_number }}
+          tag_name: lumi-2.6.0-ouro-build-${{ github.run_id }}
           name: LUMI OURO 2.6.0 - PWR imediato, touch carinho
           prerelease: true
           make_latest: false

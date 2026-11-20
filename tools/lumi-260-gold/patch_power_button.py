@@ -55,8 +55,8 @@ def apply(repo: Path) -> None:
     replacement="""\
         // GPIO5: middle PWR button must work on the FIRST normal click.
         // Avoid registering click callbacks from inside BUTTON_PRESS_UP.
-        pwr_button_.OnClick([this]() {
-            ESP_LOGI(TAG, "PWR button: toggle chat");
+        pwr_button_.OnPressDown([this]() {
+            ESP_LOGI(TAG, "PWR GPIO5: immediate press, toggle chat");
             Application::GetInstance().ToggleChatState();
         });
         pwr_button_.OnLongPress([this]() {
@@ -81,7 +81,7 @@ def apply(repo: Path) -> None:
 
 """
     final=before+replacement+last+after
-    assert final.count("pwr_button_.OnClick([this]() {")==1
+    assert final.count("pwr_button_.OnPressDown([this]() {")==1
     assert "pwr_button_.OnPressUp([this]() {" not in final
     assert "pwr_button_.OnPressUpDel();" not in final
     path.write_text(final,encoding="utf-8")

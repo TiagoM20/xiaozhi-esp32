@@ -6,6 +6,7 @@
 // Retains the no-iris two-eye design from LUMI V8, fixed GOLD (#D8B35A).
 #include "display/lcd_display.h"
 #include "assets/lang_config.h"
+#include "application.h"
 
 #include <lvgl.h>
 #include <esp_log.h>
@@ -25,9 +26,9 @@ public:
 
     ~LumiGoldFaceDisplay() override {
         DisplayLockGuard guard(this);
-        if (guard && animation_ != nullptr) {
-            lv_timer_delete(animation_);
-            animation_ = nullptr;
+        if (guard) {
+            if (animation_ != nullptr) { lv_timer_delete(animation_); animation_ = nullptr; }
+            if (touch_overlay_ != nullptr) { lv_obj_del(touch_overlay_); touch_overlay_ = nullptr; }
         }
     }
 
@@ -71,6 +72,33 @@ public:
 
         if(emoji_label_) lv_obj_add_flag(emoji_label_,LV_OBJ_FLAG_HIDDEN);
         if(emoji_image_) lv_obj_add_flag(emoji_image_,LV_OBJ_FLAG_HIDDEN);
+
+        // Transparent top-layer input area. Keeps the original LCD layout, theme,
+        // audio and all existing status labels intact.
+        touch_overlay_=lv_obj_create(lv_layer_top());
+        lv_obj_set_size(touch_overlay_, LV_HOR_RES, LV_VER_RES - 26);
+        lv_obj_align(touch_overlay_, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_bg_opa(touch_overlay_, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(touch_overlay_, 0, 0);
+        lv_obj_set_style_pad_all(touch_overlay_, 0, 0);
+        lv_obj_set_style_radius(touch_overlay_, 0, 0);
+        lv_obj_remove_flag(touch_overlay_, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(touch_overlay_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_PRESSED, this);
+        lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_GESTURE, this);
+        lv_obj_add_event_cb(touch_overlay_, TouchEvent, LV_EVENT_LONG_PRESSED, this);
+
+        for(int i=0;i<2;++i) {
+            blush_[i]=lv_obj_create(face_);
+            lv_obj_set_size(blush_[i], 24, 9);
+            lv_obj_set_style_pad_all(blush_[i],0,0);
+            lv_obj_set_style_border_width(blush_[i],0,0);
+            lv_obj_set_style_radius(blush_[i],LV_RADIUS_CIRCLE,0);
+            lv_obj_set_style_bg_color(blush_[i],lv_color_hex(kGold),0);
+            lv_obj_set_style_bg_opa(blush_[i],LV_OPA_40,0);
+            lv_obj_remove_flag(blush_[i],LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(blush_[i],LV_OBJ_FLAG_HIDDEN);
+        }
         DrawFrame();
         // 10 updates/s with six persistent LVGL widgets and no per-frame allocations.
         animation_=lv_timer_create(&LumiGoldFaceDisplay::Tick,100,this);
@@ -117,13 +145,29 @@ private:
     lv_obj_t* eye_[2]={nullptr,nullptr};
     lv_obj_t* brow_[2]={nullptr,nullptr};
     lv_obj_t* mouth_=nullptr;
+    lv_obj_t* blush_[2]={nullptr,nullptr};
+    lv_obj_t* touch_overlay_=nullptr;
     lv_timer_t* animation_=nullptr;
+    int64_t touch_love_until_ms_=0;
     int mood_=0;
     int status_mood_=0;
 
+    static void TouchEvent(lv_event_t* e) {
+        auto* face=static_cast<LumiGoldFaceDisplay*>(lv_event_get_user_data(e));
+        if (!face || !face->face_) return;
+        const auto code=lv_event_get_code(e);
+        if (code == LV_EVENT_PRESSED || code == LV_EVENT_GESTURE) {
+            face->touch_love_until_ms_ = esp_timer_get_time()/1000 + 2300;
+            face->DrawFrame();
+        } else if (code == LV_EVENT_LONG_PRESSED) {
+            ESP_LOGI("LUMI_TOUCH","Long touch: toggle voice listening");
+            Application::GetInstance().ToggleChatState();
+        }
+    }
+
     static int Mood(const char* s) {
-        if(!strcmp(s,"happy")||!strcmp(s,"laughing")||
-           !strcmp(s,"loving")||!strcmp(s,"kissy")||!strcmp(s,"excited"))return 4;
+        if(!strcmp(s,"loving")||!strcmp(s,"kissy")||!strcmp(s,"inlove"))return 10;
+        if(!strcmp(s,"happy")||!strcmp(s,"laughing")||!strcmp(s,"excited"))return 4;
         if(!strcmp(s,"surprised")||!strcmp(s,"shocked"))return 5;
         if(!strcmp(s,"confused")||!strcmp(s,"sad"))return 6;
         if(!strcmp(s,"sleepy")||!strcmp(s,"sleeping"))return 7;
@@ -145,7 +189,7 @@ private:
         const int64_t ms = esp_timer_get_time() / 1000;
         // Actual listening/speaking state takes precedence over stale AI emotions.
         const int mode = (status_mood_ == 3 || status_mood_ == 1)
-            ? status_mood_ : (mood_ != 0 ? mood_ : status_mood_);
+            ? status_mood_ : (touch_love_until_ms_ > ms ? 10 : (mood_ != 0 ? mood_ : status_mood_));
         const float t = static_cast<float>(ms);
         // Slow breathing/gaze, varied closed-eye blinks; no allocations per tick.
         const float blink_period = 4300.f + 650.f * std::sin(t / 12000.f);
@@ -156,7 +200,7 @@ private:
         const int gaze = static_cast<int>(3.f * std::sin(t / 1460.f));
         const int nod = mode == 1 ? static_cast<int>(2.f * std::sin(t / 230.f)) : 0;
         const int base_w = mode == 5 ? 37 : mode == 2 ? 35 : mode == 9 ? 38 : 43;
-        const int base_h = mode == 7 ? 4 : mode == 4 ? 29 : 40;
+        const int base_h = mode == 7 ? 4 : mode == 4 || mode == 10 ? 29 : 40;
         const int eye_h = blink > 0.f ? static_cast<int>(base_h * (1.f - 0.92f * blink)) : base_h;
         const int top = 39 + breath + nod + (mode == 2 ? 6 : 0);
         for (int i = 0; i < 2; ++i) {
@@ -164,7 +208,7 @@ private:
             const int h = mode == 8 && i == 0 ? 4 : (eye_h < 3 ? 3 : eye_h);
             lv_obj_set_size(eye_[i], base_w, h);
             lv_obj_align(eye_[i], LV_ALIGN_TOP_LEFT, x, top + (base_h - h) / 2);
-            const bool eyebrows = mode == 2 || mode == 4 || mode == 5 ||
+            const bool eyebrows = mode == 2 || mode == 4 || mode == 10 || mode == 5 ||
                                   mode == 6 || mode == 9 || mode == 8;
             if (eyebrows) {
                 lv_obj_remove_flag(brow_[i], LV_OBJ_FLAG_HIDDEN);
@@ -174,6 +218,15 @@ private:
                 lv_obj_align(brow_[i], LV_ALIGN_TOP_LEFT, x + 2, by);
             } else {
                 lv_obj_add_flag(brow_[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        for (int i=0; i<2; ++i) {
+            if (!blush_[i]) continue;
+            if (mode == 10) {
+                lv_obj_remove_flag(blush_[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_align(blush_[i], LV_ALIGN_TOP_LEFT, i == 0 ? 21 : 167, 96);
+            } else {
+                lv_obj_add_flag(blush_[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
         int mw = 33, mh = 7, my = 119;
@@ -188,6 +241,8 @@ private:
                      std::sin(t / 125.f) * std::cos(t / 305.f))); break;
             case 4: // happy
                 mw = 50; mh = 12 + static_cast<int>(2 * std::sin(t / 430.f)); break;
+            case 10: // affectionate golden smile and cheeks, temporary touch reaction
+                mw = 53; mh = 14 + static_cast<int>(2 * std::sin(t / 280.f)); break;
             case 5: // surprised
                 mw = 20; mh = 22; break;
             case 6: // sad/confused

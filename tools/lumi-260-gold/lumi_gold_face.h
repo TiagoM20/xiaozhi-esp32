@@ -139,6 +139,15 @@ public:
         return true;
     }
 
+    // Called only from the independent, optional QMI8658 task; UI access is locked.
+    void ShowDizzy() {
+        if (!face_) return;
+        DisplayLockGuard guard(this);
+        if (!guard) return;
+        dizzy_until_ms_ = esp_timer_get_time()/1000 + 2300;
+        DrawFrame();
+    }
+
 private:
     static constexpr uint32_t kGold=0xD8B35A;
     lv_obj_t* face_=nullptr;
@@ -149,6 +158,7 @@ private:
     lv_obj_t* touch_overlay_=nullptr;
     lv_timer_t* animation_=nullptr;
     int64_t touch_love_until_ms_=0;
+    int64_t dizzy_until_ms_=0;
     int mood_=0;
     int status_mood_=0;
 
@@ -189,7 +199,7 @@ private:
         const int64_t ms = esp_timer_get_time() / 1000;
         // Actual listening/speaking state takes precedence over stale AI emotions.
         const int mode = (status_mood_ == 3 || status_mood_ == 1)
-            ? status_mood_ : (touch_love_until_ms_ > ms ? 10 : (mood_ != 0 ? mood_ : status_mood_));
+            ? status_mood_ : (dizzy_until_ms_ > ms ? 11 : (touch_love_until_ms_ > ms ? 10 : (mood_ != 0 ? mood_ : status_mood_)));
         const float t = static_cast<float>(ms);
         // Slow breathing/gaze, varied closed-eye blinks; no allocations per tick.
         const float blink_period = 4300.f + 650.f * std::sin(t / 12000.f);
@@ -197,12 +207,12 @@ private:
         const float blink = blink_phase < 130.f
             ? 1.f - std::fabs(blink_phase - 65.f) / 65.f : 0.f;
         const int breath = static_cast<int>(2.f * std::sin(t / 960.f));
-        const int gaze = static_cast<int>(3.f * std::sin(t / 1460.f));
+        const int gaze = mode == 11 ? static_cast<int>(7.f * std::sin(t / 115.f)) : static_cast<int>(3.f * std::sin(t / 1460.f));
         const int nod = mode == 1 ? static_cast<int>(2.f * std::sin(t / 230.f)) : 0;
         const int base_w = mode == 5 ? 37 : mode == 2 ? 35 : mode == 9 ? 38 : 43;
         const int base_h = mode == 7 ? 4 : mode == 4 || mode == 10 ? 29 : 40;
         const int eye_h = blink > 0.f ? static_cast<int>(base_h * (1.f - 0.92f * blink)) : base_h;
-        const int top = 39 + breath + nod + (mode == 2 ? 6 : 0);
+        const int top = 39 + breath + nod + (mode == 2 ? 6 : 0) + (mode == 11 ? static_cast<int>(6.f*std::sin(t/145.f)) : 0);
         for (int i = 0; i < 2; ++i) {
             const int x = (i == 0 ? 39 : 129) + gaze;
             const int h = mode == 8 && i == 0 ? 4 : (eye_h < 3 ? 3 : eye_h);
@@ -243,6 +253,9 @@ private:
                 mw = 50; mh = 12 + static_cast<int>(2 * std::sin(t / 430.f)); break;
             case 10: // affectionate golden smile and cheeks, temporary touch reaction
                 mw = 53; mh = 14 + static_cast<int>(2 * std::sin(t / 280.f)); break;
+            case 11: // dizzy from QMI8658 shake, oscillating mouth and eyes
+                mw = 23 + static_cast<int>(3*std::sin(t/150.f));
+                mh = 13; my = 123 + static_cast<int>(3*std::sin(t/190.f)); break;
             case 5: // surprised
                 mw = 20; mh = 22; break;
             case 6: // sad/confused

@@ -17,6 +17,7 @@
 #include <cstring>
 #include <cstdint>
 #include <string_view>
+#include <atomic>
 
 class LumiGoldFaceDisplay final : public SpiLcdDisplay {
 public:
@@ -105,7 +106,7 @@ public:
         DrawFrame();
         // 10 updates/s with six persistent LVGL widgets and no per-frame allocations.
         animation_=lv_timer_create(&LumiGoldFaceDisplay::Tick,70,this);
-        ESP_LOGI("LUMI_GOLD","V7 big eyes + sound FX: 70ms timer, pt-PT, manual audio");
+        ESP_LOGI("LUMI_GOLD","V8: double-sized eyes, 5 nonverbal effects, tilt, idle curiosity, no voice replacement");
     }
 
     // Detect actual XiaoZhi speaking/listening states; affect the display only.
@@ -142,6 +143,12 @@ public:
         return true;
     }
 
+    // Low-rate tilt updates do not touch the LVGL renderer.
+    void SetTilt(int x, int y) {
+        tilt_x_.store(x, std::memory_order_relaxed);
+        tilt_y_.store(y, std::memory_order_relaxed);
+    }
+
     // Called only from the independent QMI8658 task; the screen remains LVGL-locked.
     void ShowDizzy() {
         if (!face_) return;
@@ -149,10 +156,11 @@ public:
             DisplayLockGuard guard(this);
             if (!guard) return;
             dizzy_until_ms_ = esp_timer_get_time()/1000 + 2300;
+            dizzy_variant_ = (dizzy_variant_ + 1) % 2;
             DrawFrame();
         }
         // Queue through the application's main task, never call the DAC from the IMU task.
-        QueueFx(false);
+        QueueFx(false, dizzy_variant_);
     }
 
 private:
@@ -168,18 +176,32 @@ private:
     int64_t dizzy_until_ms_=0;
     int64_t last_touch_sound_ms_=0;
     bool touch_was_long_=false;
+    int touch_variant_=0;
+    int dizzy_variant_=0;
+    std::atomic<int> tilt_x_{0};
+    std::atomic<int> tilt_y_{0};
     int mood_=0;
     int status_mood_=0;
 
-    static void QueueFx(bool touch) {
-        // Playback must never run on the LVGL or QMI8658 thread.
-        Application::GetInstance().Schedule([touch]() {
+    static void QueueFx(bool touch,int variant) {
+        // Original, non-verbal effects. Preserve Raquel's real TTS for server conversation.
+        Application::GetInstance().Schedule([touch,variant]() {
             auto& app=Application::GetInstance();
-            // Never talk over the assistant, over a recording, or while starting up.
             if (app.GetDeviceState()!=kDeviceStateIdle) return;
-            const unsigned char* sound = touch ? LumiFx::kAiOgg : LumiFx::kDizzyOgg;
-            const size_t length = touch ? LumiFx::kAiOggLen : LumiFx::kDizzyOggLen;
-            app.PlaySound(std::string_view(reinterpret_cast<const char*>(sound), length));
+            const unsigned char* bytes=nullptr;
+            size_t n=0;
+            if (touch) {
+                switch(variant%3) {
+                    case 0: bytes=LumiFx::kTapPingOgg; n=LumiFx::kTapPingOggLen; break;
+                    case 1: bytes=LumiFx::kTapPlipOgg; n=LumiFx::kTapPlipOggLen; break;
+                    default: bytes=LumiFx::kTapBubbleOgg; n=LumiFx::kTapBubbleOggLen;
+                }
+            } else if (variant%2==0) {
+                bytes=LumiFx::kShakeWobbleOgg; n=LumiFx::kShakeWobbleOggLen;
+            } else {
+                bytes=LumiFx::kShakeTumbleOgg; n=LumiFx::kShakeTumbleOggLen;
+            }
+            if(bytes && n) app.PlaySound(std::string_view(reinterpret_cast<const char*>(bytes),n));
         });
     }
 
@@ -190,6 +212,7 @@ private:
         const int64_t now=esp_timer_get_time()/1000;
         if (code == LV_EVENT_PRESSED) {
             face->touch_was_long_=false;
+            face->touch_variant_=(face->touch_variant_+1)%3;
             face->touch_love_until_ms_=now+2300;
             face->DrawFrame();
         } else if (code == LV_EVENT_GESTURE) {
@@ -200,10 +223,10 @@ private:
             ESP_LOGI("LUMI_TOUCH","Long touch: toggle voice listening; no FX");
             Application::GetInstance().ToggleChatState();
         } else if (code == LV_EVENT_RELEASED) {
-            if(!face->touch_was_long_ && now-face->last_touch_sound_ms_ > 2300) {
+            if(!face->touch_was_long_ && now-face->last_touch_sound_ms_ > 1600) {
                 face->last_touch_sound_ms_=now;
-                QueueFx(true);
-                ESP_LOGI("LUMI_TOUCH","Light touch -> original 'Ai!' sound FX");
+                QueueFx(true,face->touch_variant_);
+                ESP_LOGI("LUMI_TOUCH","Tap -> original nonverbal effect %d",face->touch_variant_);
             }
         }
     }
@@ -231,31 +254,39 @@ private:
         if (!face_ || !eye_[0] || !eye_[1] || !mouth_) return;
         const int64_t ms = esp_timer_get_time() / 1000;
         // Actual listening/speaking state takes precedence over stale AI emotions.
-        const int mode = (status_mood_ == 3 || status_mood_ == 1)
-            ? status_mood_ : (dizzy_until_ms_ > ms ? 11 : (touch_love_until_ms_ > ms ? 10 : (mood_ != 0 ? mood_ : status_mood_)));
+        const int idleMood = ((ms/6800)%9==3) ? 12 : (((ms/6800)%9==7) ? 13 : 0);
+        // Listening and talking always take precedence over playful emotions.
+        const int mode = (status_mood_ == 3 || status_mood_ == 1 || status_mood_ == 2)
+            ? status_mood_
+            : (dizzy_until_ms_ > ms ? (dizzy_variant_ ? 14 : 11)
+              : (touch_love_until_ms_ > ms ? (touch_variant_==1 ? 12 : (touch_variant_==2 ? 13 : 10))
+              : (mood_ != 0 ? mood_ : idleMood)));
         const float t = static_cast<float>(ms);
         // Slow breathing/gaze, varied closed-eye blinks; no allocations per tick.
         const float blink_period = 4300.f + 650.f * std::sin(t / 12000.f);
         const float blink_phase = std::fmod(t, blink_period);
         const float blink = blink_phase < 130.f
-            ? 1.f - std::fabs(blink_phase - 65.f) / 65.f : 0.f;
+            ? 1.f - std::fabs(blink_phase - 65.f) / 65.f
+            : ((blink_phase > 330.f && blink_phase < 460.f)
+               ? 1.f - std::fabs(blink_phase - 395.f)/65.f : 0.f);
         const int breath = static_cast<int>(2.f * std::sin(t / 960.f));
-        const int gaze = mode == 11 ? static_cast<int>(6.f * std::sin(t / 115.f))
-                                    : static_cast<int>(4.f * std::sin(t / 1460.f));
+        const int gaze = (mode == 11 || mode == 14
+            ? static_cast<int>(6.f*std::sin(t/115.f))
+            : static_cast<int>(4.f*std::sin(t/1460.f))) + tilt_x_.load(std::memory_order_relaxed);
         const int nod = mode == 1 ? static_cast<int>(3.f * std::sin(t / 230.f))
                                   : mode == 4 ? static_cast<int>(2.f*std::sin(t/240.f)) : 0;
         // 2x the old 43x40 eyes in neutral mode. 212px canvas, no irises.
         const int base_w = mode == 5 ? 74 : mode == 2 ? 70 : mode == 9 ? 76 : 86;
-        const int base_h = mode == 7 ? 8 : mode == 4 || mode == 10 ? 58 : 80;
+        const int base_h = mode == 7 ? 8 : mode == 4 || mode == 10 || mode == 13 ? 58 : mode == 12 ? 86 : 80;
         const int eye_h = blink > 0.f ? static_cast<int>(base_h * (1.f - 0.92f * blink)) : base_h;
-        const int top = 23 + breath + nod + (mode == 2 ? 6 : 0) + (mode == 11 ? static_cast<int>(5.f*std::sin(t/145.f)) : 0);
+        const int top = 23 + breath + nod + tilt_y_.load(std::memory_order_relaxed) + (mode == 2 ? 6 : 0) + (mode == 11 || mode == 14 ? static_cast<int>(5.f*std::sin(t/145.f)) : 0);
         for (int i = 0; i < 2; ++i) {
             const int x = (i == 0 ? 6 : 120) + gaze + (mode == 2 ? (i == 0 ? 7 : 8) : 0);
             const int h = mode == 8 && i == 0 ? 4 : (eye_h < 3 ? 3 : eye_h);
             lv_obj_set_size(eye_[i], base_w, h);
             lv_obj_align(eye_[i], LV_ALIGN_TOP_LEFT, x, top + (base_h - h) / 2);
             const bool eyebrows = mode == 2 || mode == 4 || mode == 10 || mode == 5 ||
-                                  mode == 6 || mode == 9 || mode == 8 || mode == 11;
+                                  mode == 6 || mode == 9 || mode == 8 || mode == 11 || mode == 12 || mode == 13 || mode == 14;
             if (eyebrows) {
                 lv_obj_remove_flag(brow_[i], LV_OBJ_FLAG_HIDDEN);
                 const int by = top - (mode == 5 ? 19 : mode == 6 ? 8 : 13) +
@@ -268,7 +299,7 @@ private:
         }
         for (int i=0; i<2; ++i) {
             if (!blush_[i]) continue;
-            if (mode == 10) {
+            if (mode == 10 || mode == 13) {
                 lv_obj_remove_flag(blush_[i], LV_OBJ_FLAG_HIDDEN);
                 lv_obj_align(blush_[i], LV_ALIGN_TOP_LEFT, i == 0 ? 17 : 174, 107);
             } else {
@@ -289,9 +320,14 @@ private:
                 mw = 62; mh = 14 + static_cast<int>(3 * std::sin(t / 430.f)); break;
             case 10: // affectionate golden smile and cheeks, temporary touch reaction
                 mw = 66; mh = 17 + static_cast<int>(3 * std::sin(t / 280.f)); break;
-            case 11: // dizzy from QMI8658 shake, oscillating mouth and eyes
-                mw = 23 + static_cast<int>(3*std::sin(t/150.f));
-                mh = 13; my = 123 + static_cast<int>(3*std::sin(t/190.f)); break;
+            case 11: // dizzy wobble
+            case 14: // dizzy tumble
+                mw=24+static_cast<int>(6*std::sin(t/140.f));
+                mh=12; my=123+static_cast<int>(4*std::sin(t/190.f)); break;
+            case 12: // curious surprise
+                mw=18; mh=23; my=121; break;
+            case 13: // shy, happy
+                mw=56; mh=13+static_cast<int>(2*std::sin(t/260.f)); break;
             case 5: // surprised
                 mw = 20; mh = 22; break;
             case 6: // sad/confused

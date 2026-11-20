@@ -76,11 +76,112 @@ jobs:
           set -euo pipefail
           source "$IDF_PATH/export.sh"
           python3 scripts/build.py waveshare/esp32-s3-touch-lcd-1.54 --name esp32-s3-touch-lcd-1.54 --language pt-PT
-          grep -qx 'CONFIG_LANGUAGE_PT_PT=y' sdkconfig
-          grep -qx 'CONFIG_WAKE_WORD_DISABLED=y' sdkconfig
-          grep -qx '# CONFIG_USE_AUDIO_PROCESSOR is not set' sdkconfig
-          grep -qx '# CONFIG_USE_DEVICE_AEC is not set' sdkconfig
-          grep -qx '# CONFIG_USE_AFE_WAKE_WORD is not set' sdkconfig
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          cfg=Path('sdkconfig').read_text()
+          assert re.search(r'^CONFIG_LANGUAGE_PT_PT=y
+          grep -q 'LUMI AUDIO RECOVERY: raw microphone' main/audio/engines/afe_audio_engine.cc
+          test -s build/xiaozhi.bin
+      - name: Verificar e empacotar candidato
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json,hashlib
+          data=Path('build/xiaozhi.bin').read_bytes()
+          assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
+          name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
+          Path(name).write_bytes(data)
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','shake':'qmi8658_dizzy_optional','wake_word':'disabled_raw_audio_recovery','audio_mode':'RAW_PCM_NO_AFE','fix':'stale wn10_pt_olaesp asset blocked AFE create','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
+          with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
+            z.write(name);z.write('LUMI-manifest.json')
+          print('SHA256',manifest['app_sha256'])
+          PY
+      - name: Publicar release apenas de teste; sem gasto de artifact storage
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-ouro-audio-recovery-${{ github.run_id }}
+          name: LUMI OURO 2.6.0 - AUDIO RECOVERY sem WakeNet
+          prerelease: true
+          make_latest: false
+          body: 'Candidato experimental de recuperacao: desativa AFE/WakeNet que bloqueava o audio no modelo antigo wn10_pt_olaesp; mantem codec de microfone e coluna, MQTT, botoes, toque, giroscopio e pt-PT. Wake word por voz temporariamente INDISPONIVEL. Nao altera NVS/assets/bootloader. Instalar apos backup validado e rollback preparado.'
+          files: |
+            upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            upstream/LUMI-manifest.json
+,cfg,re.M), 'pt-PT missing'
+          assert re.search(r'^CONFIG_WAKE_WORD_DISABLED=y
+          grep -q 'LUMI AUDIO RECOVERY: raw microphone' main/audio/engines/afe_audio_engine.cc
+          test -s build/xiaozhi.bin
+      - name: Verificar e empacotar candidato
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json,hashlib
+          data=Path('build/xiaozhi.bin').read_bytes()
+          assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
+          name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
+          Path(name).write_bytes(data)
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','shake':'qmi8658_dizzy_optional','wake_word':'disabled_raw_audio_recovery','audio_mode':'RAW_PCM_NO_AFE','fix':'stale wn10_pt_olaesp asset blocked AFE create','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
+          with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
+            z.write(name);z.write('LUMI-manifest.json')
+          print('SHA256',manifest['app_sha256'])
+          PY
+      - name: Publicar release apenas de teste; sem gasto de artifact storage
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-ouro-audio-recovery-${{ github.run_id }}
+          name: LUMI OURO 2.6.0 - AUDIO RECOVERY sem WakeNet
+          prerelease: true
+          make_latest: false
+          body: 'Candidato experimental de recuperacao: desativa AFE/WakeNet que bloqueava o audio no modelo antigo wn10_pt_olaesp; mantem codec de microfone e coluna, MQTT, botoes, toque, giroscopio e pt-PT. Wake word por voz temporariamente INDISPONIVEL. Nao altera NVS/assets/bootloader. Instalar apos backup validado e rollback preparado.'
+          files: |
+            upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            upstream/LUMI-manifest.json
+,cfg,re.M), 'WakeNet not disabled'
+          for option in ['USE_AUDIO_PROCESSOR','USE_DEVICE_AEC','USE_AFE_WAKE_WORD','USE_CUSTOM_WAKE_WORD']:
+            assert not re.search(rf'^CONFIG_{option}=y
+          grep -q 'LUMI AUDIO RECOVERY: raw microphone' main/audio/engines/afe_audio_engine.cc
+          test -s build/xiaozhi.bin
+      - name: Verificar e empacotar candidato
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json,hashlib
+          data=Path('build/xiaozhi.bin').read_bytes()
+          assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
+          name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
+          Path(name).write_bytes(data)
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','shake':'qmi8658_dizzy_optional','wake_word':'disabled_raw_audio_recovery','audio_mode':'RAW_PCM_NO_AFE','fix':'stale wn10_pt_olaesp asset blocked AFE create','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
+          with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
+            z.write(name);z.write('LUMI-manifest.json')
+          print('SHA256',manifest['app_sha256'])
+          PY
+      - name: Publicar release apenas de teste; sem gasto de artifact storage
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-ouro-audio-recovery-${{ github.run_id }}
+          name: LUMI OURO 2.6.0 - AUDIO RECOVERY sem WakeNet
+          prerelease: true
+          make_latest: false
+          body: 'Candidato experimental de recuperacao: desativa AFE/WakeNet que bloqueava o audio no modelo antigo wn10_pt_olaesp; mantem codec de microfone e coluna, MQTT, botoes, toque, giroscopio e pt-PT. Wake word por voz temporariamente INDISPONIVEL. Nao altera NVS/assets/bootloader. Instalar apos backup validado e rollback preparado.'
+          files: |
+            upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            upstream/LUMI-manifest.json
+,cfg,re.M), option+' unexpectedly enabled'
+          print('Validated RAW audio: pt-PT, wake off, AFE off, device AEC off')
+          PY
           grep -q 'LUMI AUDIO RECOVERY: raw microphone' main/audio/engines/afe_audio_engine.cc
           test -s build/xiaozhi.bin
       - name: Verificar e empacotar candidato

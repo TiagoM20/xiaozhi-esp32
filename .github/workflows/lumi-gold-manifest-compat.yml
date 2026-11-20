@@ -1,0 +1,74 @@
+name: LUMI OURO - corrigir metadados do instalador sem recompilar
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/lumi-gold-manifest-compat.yml
+permissions:
+  contents: write
+jobs:
+  manifest_compat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter firmware candidata-3 original sem alterar binario
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p original
+          gh release download lumi-2.6.0-ouro-candidata-3 -R "${{ github.repository }}" -p 'LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip' -D original
+          printf '%s  %s\n' '96588b50abe40514d953122befc8d9d975710ea66a66a630085aa49db2e2de45' 'original/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip' | sha256sum --check
+      - name: Corrigir apenas o identificador do botao que o EXE verifica
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,zipfile,hashlib
+          from pathlib import Path
+          p=Path('original/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip')
+          with zipfile.ZipFile(p) as z:
+              members=z.namelist()
+              assert sorted(members)==sorted(['LUMI-manifest.json','LUMI-2.6.0-OURO-app-CANDIDATA.bin']), members
+              manifest=json.loads(z.read('LUMI-manifest.json'))
+              app=z.read('LUMI-2.6.0-OURO-app-CANDIDATA.bin')
+          actual=hashlib.sha256(app).hexdigest()
+          assert actual=='9eeab98c94ba978666ae6b93972d746a74e9668170c6db2ce81c75843e66cb07',actual
+          assert manifest['app_sha256']==actual
+          assert manifest['middle_button']=='pwr_gpio5_onpressdown'
+          assert manifest['touch']=='tap_or_swipe_love_long_touch_toggle_chat'
+          assert manifest['board']=='waveshare/esp32-s3-touch-lcd-1.54'
+          assert manifest['locale']=='pt-PT' and manifest['version']=='2.6.0'
+          assert manifest['face']=='#D8B35A' and manifest['wake_word']=='wn9_hiesp'
+          assert app[0]==0xe9
+          # Identificador curto fiel ao evento (pressionar, nao clicar).
+          # Tem 17 caracteres: mantem verificacao forte do instalador Windows.
+          manifest['middle_button']='pwr_gpio5_pressdn'
+          manifest['input_event']='gpio5_press_down'
+          manifest['installer_manifest_revision']=2
+          assert len(manifest['middle_button'])==len('pwr_gpio5_onclick')
+          out=Path('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip')
+          encoded=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
+          with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.writestr('LUMI-2.6.0-OURO-app-CANDIDATA.bin',app)
+              z.writestr('LUMI-manifest.json',encoded)
+          Path('LUMI-manifest.json').write_bytes(encoded)
+          digest=hashlib.sha256(out.read_bytes()).hexdigest()
+          Path('SHA256-ZIP.txt').write_text(digest+'  '+out.name+'\n',encoding='utf-8')
+          print('APP SHA256 (unaltered)',actual)
+          print('ZIP SHA256',digest)
+          print('Only metadata modified; firmware application binary identical')
+          PY
+      - name: Publicar release de compatibilidade EXE
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lumi-2.6.0-ouro-candidata-4
+          name: LUMI 2.6.0 OURO - PWR e touch, manifesto corrigido
+          prerelease: true
+          make_latest: false
+          body: 'Mesma firmware binaria da candidata-3 (SHA256 9eeab98c94ba978666ae6b93972d746a74e9668170c6db2ce81c75843e66cb07), apenas metadados middle_button normalizados para pwr_gpio5_pressdn para EXE. Continua experimental; exige backup e validacao OTA.'
+          files: |
+            LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
+            LUMI-manifest.json
+            SHA256-ZIP.txt

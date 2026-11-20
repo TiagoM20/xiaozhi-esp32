@@ -1,4 +1,4 @@
-name: LUMI 2.6.0 OURO - botao PWR corrigido
+name: LUMI 2.6.0 OURO - PWR imediato e toque apaixonado
 on:
   workflow_dispatch: {}
   push:
@@ -60,7 +60,7 @@ jobs:
           modified=Path('upstream',p).read_text()
           button_start='        pwr_button_.OnPressUp([this]() {'
           button_end='        volume_up_button_.OnClick([this]() {'
-          assert modified.count('        pwr_button_.OnClick([this]() {')==1
+          assert modified.count('        pwr_button_.OnPressDown([this]() {')==1
           assert button_start not in modified
           assert 'pwr_button_.OnPressUpDel();' not in modified
           assert 'pwr_button_.OnLongPress([this]() {' in modified
@@ -97,7 +97,7 @@ jobs:
           assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
           name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
           Path(name).write_bytes(data)
-          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onclick','wake_word':'wn9_hiesp','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','wake_word':'wn9_hiesp','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
           Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
           with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
             z.write(name);z.write('LUMI-manifest.json')
@@ -107,10 +107,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: lumi-2.6.0-ouro-candidata-${{ github.run_number }}
-          name: LUMI OURO 2.6.0 - botao PWR corrigido, Hi ESP
+          name: LUMI OURO 2.6.0 - PWR imediato, touch carinho
           prerelease: true
           make_latest: false
-          body: 'Candidato NAO testado fisicamente na DESK. Botao central PWR GPIO5 corrigido; WakeNet stock reconhece HI ESP, NAO Ola Lumi. Preserva NVS/assets, nao altera motor de audio. Instalar apenas com backup e reversao OTA validados.'
+          body: 'Candidato experimental. PWR GPIO5: detectar pressao imediatamente para escuta. Ecrã touch: toque/deslize gera cara apaixonada 2.3s; pressao prolongada alterna escuta. Mantem WakeNet stock Hi ESP, NAO Ola Lumi. Preserva NVS/audio/assets. Fazer backup antes de instalar.'
           files: |
             upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
             upstream/LUMI-manifest.json

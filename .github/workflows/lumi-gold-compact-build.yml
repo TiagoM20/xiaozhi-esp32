@@ -1,6 +1,10 @@
-name: LUMI 2.6.0 OURO - PWR imediato e toque apaixonado
+name: LUMI 2.6.0 OURO - PWR touch e QMI8658 zonza
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lumi-gold-compact-build.yml'
 permissions:
   contents: write
   actions: write
@@ -49,6 +53,7 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "67ca62d4bb7d91e514d7ccd5e6977745002f41f4"
           python3 lumi/tools/lumi-260-gold/patch_board.py upstream lumi/tools/lumi-260-gold/lumi_gold_face.h
           python3 lumi/tools/lumi-260-gold/patch_power_button.py upstream
+          python3 lumi/tools/lumi-260-gold/patch_imu.py upstream lumi/tools/lumi-260-gold/lumi_shake_sensor.h
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
@@ -69,7 +74,18 @@ jobs:
           _,oldsuffix=oldrest.split(button_end,1)
           newhead,newrest=modified.split('        // GPIO5: middle PWR button',1)
           _,newsuffix=newrest.split(button_end,1)
+          # New IMU lines are intentionally the only additional difference to
+          # the previously approved gold-face/PWR patch.
+          newhead=newhead.replace('#include "lumi_shake_sensor.h"\n','')
+          newhead=newhead.replace('    LumiShakeSensor* shake_sensor_ = nullptr;\n','')
+          setup=('    void InitializeShakeSensor() {\n'
+                 '        shake_sensor_ = new LumiShakeSensor();\n'
+                 '        shake_sensor_->Start(i2c_bus_, static_cast<LumiGoldFaceDisplay*>(display_));\n'
+                 '    }\n\n')
+          newhead=newhead.replace(setup,'')
+          newsuffix=newsuffix.replace('        InitializeShakeSensor();\n','')
           assert newhead==oldhead and newsuffix==oldsuffix
+          assert Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_shake_sensor.h').is_file()
           assert subprocess.check_output(['git','-C','upstream','diff','--name-only'],text=True).splitlines()==[p]
           assert 'bool SetEmotion(const char* emotion) override' in Path('upstream/main/boards/waveshare/esp32-s3-touch-lcd-1.54/lumi_gold_face.h').read_text()
           PY
@@ -95,7 +111,7 @@ jobs:
           assert data[0]==0xe9 and 1000000<len(data)<0x3f0000
           name='LUMI-2.6.0-OURO-app-CANDIDATA.bin'
           Path(name).write_bytes(data)
-          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','wake_word':'wn9_hiesp','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
+          manifest={'source_sha':'67ca62d4bb7d91e514d7ccd5e6977745002f41f4','board':'waveshare/esp32-s3-touch-lcd-1.54','version':'2.6.0','locale':'pt-PT','face':'#D8B35A','middle_button':'pwr_gpio5_onpressdown','touch':'tap_or_swipe_love_long_touch_toggle_chat','shake':'qmi8658_dizzy_optional','wake_word':'wn9_hiesp','app_sha256':hashlib.sha256(data).hexdigest(),'app_size':len(data),'runtime_tested':False,'safe_to_auto_flash':False,'install_prohibited_until_rollback_validated':True}
           Path('LUMI-manifest.json').write_text(json.dumps(manifest,indent=2))
           with ZipFile('LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip','w') as z:
             z.write(name);z.write('LUMI-manifest.json')
@@ -105,10 +121,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: lumi-2.6.0-ouro-build-${{ github.run_id }}
-          name: LUMI OURO 2.6.0 - PWR imediato, touch carinho
+          name: LUMI OURO 2.6.0 - PWR touch e IMU zonza
           prerelease: true
           make_latest: false
-          body: 'Candidato experimental. PWR GPIO5: detectar pressao imediatamente para escuta. Ecrã touch: toque/deslize gera cara apaixonada 2.3s; pressao prolongada alterna escuta. Mantem WakeNet stock Hi ESP, NAO Ola Lumi. Preserva NVS/audio/assets. Fazer backup antes de instalar.'
+          body: 'Candidato experimental. PWR GPIO5 ao premir; touch carinho, touch longo interacao; IMU QMI8658 abanar gera cara zonza 2.3s, opcional. Mantem WakeNet stock Hi ESP. Preserva NVS/audio/assets. Instalar apenas depois de backup verificado.'
           files: |
             upstream/LUMI-260-OURO-CANDIDATA-NAO-INSTALAR.zip
             upstream/LUMI-manifest.json

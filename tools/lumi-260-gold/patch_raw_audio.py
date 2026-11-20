@@ -28,7 +28,7 @@ def patch(repo: Path):
 
     src=repo/AFE
     code=src.read_text(encoding="utf-8")
-    anchor='    output_buffer_.reserve(frame_samples_);\n'
+    anchor='    frame_samples_ = frame_duration_ms * 16000 / 1000;\n    output_buffer_.reserve(frame_samples_);\n'
     assert code.count(anchor)==1, "Upstream audio engine modified; refusing patch"
     guard='''
 

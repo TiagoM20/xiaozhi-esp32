@@ -19,6 +19,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
           command -v ffmpeg
           mkdir -p sound-build
           python3 lumi/tools/lumi-260-gold/make_v8_sounds.py sound-build/lumi_fx_sound.h

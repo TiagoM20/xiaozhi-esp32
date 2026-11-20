@@ -60,10 +60,19 @@ jobs:
           print('ZIP SHA256',digest)
           print('Only metadata modified; firmware application binary identical')
           PY
+      - name: Garantir que esta release nunca substitui uma anterior
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view lumi-2.6.0-ouro-touch-pwr-compat-20261120 -R "${{ github.repository }}" >/dev/null 2>&1; then
+            echo 'Esta release ja existe; nao substituir ficheiros!'
+            exit 1
+          fi
       - name: Publicar release de compatibilidade EXE
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lumi-2.6.0-ouro-candidata-4
+          tag_name: lumi-2.6.0-ouro-touch-pwr-compat-20261120
           name: LUMI 2.6.0 OURO - PWR e touch, manifesto corrigido
           prerelease: true
           make_latest: false
